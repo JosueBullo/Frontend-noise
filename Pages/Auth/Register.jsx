@@ -1,717 +1,309 @@
 import React, { useState, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  StyleSheet, 
-  Image, 
-  TouchableOpacity,
-  ActivityIndicator,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Dimensions
+import {
+  View, Text, TextInput, StyleSheet, Image, ActivityIndicator,
+  TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView,
+  Dimensions, StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
+import * as ImagePicker from 'expo-image-picker';
 import { showToast } from '../../utils/toast';
 import API_BASE_URL from '../../utils/api';
-import * as ImagePicker from 'expo-image-picker';
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
+const SB_HEIGHT = Platform.OS === 'ios' ? (height >= 812 ? 44 : 20) : StatusBar.currentHeight || 24;
 
-// Enhanced InputField component with focus styling and required indicator
-const InputField = React.memo(({
-  name,
-  icon,
-  placeholder,
-  value,
-  onChangeText,
-  secureTextEntry = false,
-  keyboardType = 'default',
-  autoCapitalize = 'sentences',
-  isPassword = false,
-  showPassword = false,
-  onTogglePassword,
-  required = false
-}) => {
-  const [isFocused, setIsFocused] = useState(false);
+const C = {
+  dark:   '#3E2C23',
+  saddle: '#8B4513',
+  mid:    '#654321',
+  gold:   '#DAA520',
+  cream:  '#FDF5E6',
+  bg:     '#F5F0E8',
+  white:  '#FFFFFF',
+  sub:    '#8B7355',
+  muted:  '#A89070',
+  red:    '#E74C3C',
+  green:  '#27AE60',
+};
 
-  return (
-    <View style={[styles.inputWrapper, isFocused && styles.inputWrapperFocused]}>
-      <Ionicons 
-        name={icon} 
-        size={20} 
-        color={isFocused ? "#A67C52" : "#8B5A3C"} 
-        style={styles.inputIcon} 
-      />
-      <TextInput
-        style={[styles.input, isPassword && styles.passwordInput]}
-        placeholder={`${placeholder}${required ? ' *' : ''}`}
-        placeholderTextColor="#999999"
-        value={value}
-        onChangeText={onChangeText}
-        secureTextEntry={secureTextEntry}
-        keyboardType={keyboardType}
-        autoCapitalize={autoCapitalize}
-        autoCorrect={false}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-      />
-      {isPassword && (
-        <TouchableOpacity
-          style={styles.eyeIcon}
-          onPress={onTogglePassword}
-        >
-          <Ionicons 
-            name={showPassword ? "eye-off-outline" : "eye-outline"} 
-            size={20} 
-            color={isFocused ? "#A67C52" : "#8B5A3C"} 
-          />
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-});
-
-const Register = ({ navigation }) => {
-  // User Information - Changed from 'name' to 'username'
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+export default function Register({ navigation }) {
+  const [username, setUsername]             = useState('');
+  const [email, setEmail]                   = useState('');
+  const [password, setPassword]             = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [profilePhoto, setProfilePhoto] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [profilePhoto, setProfilePhoto]     = useState(null);
+  const [loading, setLoading]               = useState(false);
+  const [showPw, setShowPw]                 = useState(false);
+  const [showConfirmPw, setShowConfirmPw]   = useState(false);
+  const [focusedField, setFocusedField]     = useState(null);
 
   const pickImage = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        showToast('error', 'Permission Denied', 'Sorry, we need camera roll permissions to select an image');
-        return;
-      }
-
+      if (status !== 'granted') { showToast('error', 'Permission Denied', 'Camera roll access is required'); return; }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
       });
-
-      if (!result.canceled) {
-        const manipulatedImage = await manipulateAsync(
-          result.assets[0].uri,
-          [{ resize: { width: 500, height: 500 } }],
-          { compress: 0.7, format: SaveFormat.JPEG }
-        );
-        setProfilePhoto(manipulatedImage);
-      }
-    } catch (error) {
-      console.error('Image picker error:', error);
-      showToast('error', 'Image Error', 'Failed to select image. Please try again.');
-    }
-  };
-
-  const validateForm = () => {
-    // Check if profile photo is required and missing
-    if (!profilePhoto) {
-      showToast('error', 'Profile Photo Required', 'Please select a profile photo');
-      return false;
-    }
-
-    if (!username.trim()) {
-      showToast('error', 'Username Required', 'Please enter your username');
-      return false;
-    }
-
-    if (username.trim().length < 2) {
-      showToast('error', 'Invalid Username', 'Username must be at least 2 characters long');
-      return false;
-    }
-
-    if (!email.trim()) {
-      showToast('error', 'Email Required', 'Please enter your email address');
-      return false;
-    }
-
-    if (!/^\S+@\S+\.\S+$/.test(email)) {
-      showToast('error', 'Invalid Email', 'Please enter a valid email address');
-      return false;
-    }
-
-    if (!password.trim()) {
-      showToast('error', 'Password Required', 'Please enter a password');
-      return false;
-    }
-
-    if (password.length < 6) {
-      showToast('error', 'Password Too Short', 'Password must be at least 6 characters');
-      return false;
-    }
-
-    if (!confirmPassword.trim()) {
-      showToast('error', 'Confirm Password', 'Please confirm your password');
-      return false;
-    }
-
-    if (password !== confirmPassword) {
-      showToast('error', 'Password Mismatch', "Passwords don't match!");
-      return false;
-    }
-
-    return true;
+      if (!result.canceled && result.assets?.[0]) setProfilePhoto(result.assets[0]);
+    } catch { showToast('error', 'Image Error', 'Failed to select image. Please try again.'); }
   };
 
   const handleRegister = async () => {
-    if (!validateForm()) return;
+    if (!profilePhoto)              { showToast('error', 'Photo Required',    'Please select a profile photo'); return; }
+    if (!username.trim())           { showToast('error', 'Username Required', 'Please enter your username'); return; }
+    if (username.trim().length < 2) { showToast('error', 'Invalid Username',  'Username must be at least 2 characters'); return; }
+    if (!email.trim())              { showToast('error', 'Email Required',    'Please enter your email'); return; }
+    if (!/^\S+@\S+\.\S+$/.test(email)) { showToast('error', 'Invalid Email', 'Please enter a valid email'); return; }
+    if (!password.trim())           { showToast('error', 'Password Required', 'Please enter a password'); return; }
+    if (password.length < 6)        { showToast('error', 'Too Short',         'Password must be at least 6 characters'); return; }
+    if (password !== confirmPassword) { showToast('error', 'Mismatch',        "Passwords don't match"); return; }
 
     setLoading(true);
-
     try {
       const formData = new FormData();
-      
-      // Changed from 'name' to 'username' to match backend expectations
       formData.append('username', username.trim());
       formData.append('email', email.trim().toLowerCase());
       formData.append('password', password.trim());
-      formData.append('userType', 'user'); // Default user type (no vet option)
-      
-      // Profile photo is now guaranteed to exist due to validation
-      formData.append('profilePhoto', {
-        uri: profilePhoto.uri,
-        type: 'image/jpeg',
-        name: 'profile.jpg'
+      formData.append('userType', 'user');
+      formData.append('profilePhoto', { uri: profilePhoto.uri, type: 'image/jpeg', name: 'profile.jpg' });
+
+      const { data } = await axios.post(`${API_BASE_URL}/auth/register`, formData, {
+        headers: { Accept: 'application/json', 'Content-Type': 'multipart/form-data' },
+        timeout: 30000,
       });
 
-      const response = await axios.post(`${API_BASE_URL}/auth/register`, formData, {
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 30000, // 30 second timeout for file upload
-      });
+      if (!data.user) throw new Error('Invalid response format');
 
-      const { data } = response;
-
-      if (!data.user) {
-        throw new Error('Invalid response format');
-      }
-
-      // Show verification email toast
-      showToast('success', 'Check Your Email', data.message || 'Registration successful! Please check your email to verify your account.');
-      
-      // Navigate back to Login screen for user to verify email first
-      setTimeout(() => {
-        navigation.navigate('Login');
-      }, 2000); // Give user time to read the toast
-
-    } catch (error) {
-      console.error('Registration error:', error);
-      
-      let errorMessage = 'An error occurred during registration';
-      
-      if (error.response) {
-        // Server responded with error status
-        errorMessage = error.response.data?.message || `Server error: ${error.response.status}`;
-      } else if (error.request) {
-        // Network error
-        errorMessage = 'Network error. Please check your connection and try again.';
-      } else if (error.code === 'ECONNABORTED') {
-        // Timeout error
-        errorMessage = 'Upload timeout. Please try again with a smaller image.';
-      } else {
-        // Other errors
-        errorMessage = error.message || errorMessage;
-      }
-
-      showToast('error', 'Registration Failed', errorMessage);
+      showToast('success', 'Account Created!', data.message || 'Please check your email to verify your account.');
+      setTimeout(() => navigation.navigate('Login'), 2000);
+    } catch (e) {
+      const msg = e.response?.data?.message || (e.request ? 'Network error. Check your connection.' : e.message) || 'Registration failed';
+      showToast('error', 'Registration Failed', msg);
     } finally {
       setLoading(false);
     }
   };
 
-  // Memoized toggle functions
-  const toggleShowPassword = useCallback(() => {
-    setShowPassword(prev => !prev);
-  }, []);
+  const togglePw        = useCallback(() => setShowPw(v => !v), []);
+  const toggleConfirmPw = useCallback(() => setShowConfirmPw(v => !v), []);
+  const field = (name) => [s.inputWrap, focusedField === name && s.inputWrapFocused];
 
-  const toggleShowConfirmPassword = useCallback(() => {
-    setShowConfirmPassword(prev => !prev);
-  }, []);
+  const pwMatch = confirmPassword.length > 0 && password === confirmPassword;
+  const pwMismatch = confirmPassword.length > 0 && password !== confirmPassword;
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <LinearGradient
-        colors={['#D4A574', '#A67C52']} // Warm beige to rich brown
-        style={styles.gradientContainer}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContainer}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Header Section */}
-          <View style={styles.headerSection}>
-            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-              <Ionicons name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
-            
-            <TouchableOpacity onPress={pickImage} style={styles.profileImageContainer}>
-              <Image 
-                source={profilePhoto ? { uri: profilePhoto.uri } : require('../../assets/default-profile.png')}
-                style={[
-                  styles.profileImage,
-                  !profilePhoto && styles.profileImageRequired
-                ]}
-              />
-              <View style={styles.cameraIcon}>
-                <Ionicons name="camera" size={20} color="#fff" />
-              </View>
-              <View style={styles.photoHint}>
-                <Text style={styles.photoHintText}>
-                  {profilePhoto ? 'Tap to change photo' : 'Tap to add photo *'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-            
-            <Text style={styles.welcomeText}>Create Account</Text>
-            <Text style={styles.subtitle}>Join us and start your journey</Text>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <StatusBar barStyle="light-content" backgroundColor={C.dark} />
+
+      <LinearGradient colors={[C.dark, C.saddle, '#A0522D']} style={s.bg} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }}>
+
+        {/* Decorative circles */}
+        <View style={[s.circle, s.circleTopRight]} />
+        <View style={[s.circle, s.circleBottomLeft]} />
+
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
+          {/* Back */}
+          <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={20} color={C.cream} />
+          </TouchableOpacity>
+
+          {/* Brand */}
+          <View style={s.brandSection}>
+            <View style={s.logoWrap}>
+              <Image source={require('../../assets/logo.png')} style={s.logo} resizeMode="contain" />
+            </View>
+            <Text style={s.brandName}>NOISEWATCH</Text>
+            <Text style={s.brandSub}>Create your account to get started</Text>
           </View>
-          
-          {/* Form Section */}
-          <View style={styles.formContainer}>
-            {/* Personal Information */}
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionHeader}>
-                <Ionicons name="person-outline" size={18} color="#A67C52" /> Personal Information
-              </Text>
-              
-              {/* Changed from "Full Name" to "Username" */}
-              <InputField
-                name="username"
-                icon="person-outline"
-                placeholder="Username"
+
+          {/* Card */}
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Create Account</Text>
+            <Text style={s.cardSub}>Join the community and help monitor noise disturbances.</Text>
+
+            {/* Avatar picker */}
+            <TouchableOpacity style={s.avatarWrap} onPress={pickImage} activeOpacity={0.85}>
+              <Image
+                source={profilePhoto ? { uri: profilePhoto.uri } : require('../../assets/default-profile.png')}
+                style={[s.avatar, !profilePhoto && s.avatarEmpty]}
+                resizeMode="cover"
+              />
+              <View style={s.cameraBtn}>
+                <Ionicons name="camera" size={16} color={C.white} />
+              </View>
+              <Text style={s.avatarHint}>{profilePhoto ? 'Tap to change photo' : 'Add profile photo *'}</Text>
+            </TouchableOpacity>
+
+            {/* Username */}
+            <Text style={s.label}>Username <Text style={s.req}>*</Text></Text>
+            <View style={field('username')}>
+              <Ionicons name="person-outline" size={19} color={focusedField === 'username' ? C.saddle : C.muted} style={s.inputIcon} />
+              <TextInput
+                style={s.input}
+                placeholder="your_username"
+                placeholderTextColor="#C4B49A"
                 value={username}
                 onChangeText={setUsername}
                 autoCapitalize="none"
-                required={true}
+                autoCorrect={false}
+                onFocus={() => setFocusedField('username')}
+                onBlur={() => setFocusedField(null)}
+                editable={!loading}
               />
-              
-              <InputField
-                name="email"
-                icon="mail-outline"
-                placeholder="Email Address"
+            </View>
+
+            {/* Email */}
+            <Text style={s.label}>Email Address <Text style={s.req}>*</Text></Text>
+            <View style={field('email')}>
+              <Ionicons name="mail-outline" size={19} color={focusedField === 'email' ? C.saddle : C.muted} style={s.inputIcon} />
+              <TextInput
+                style={s.input}
+                placeholder="you@example.com"
+                placeholderTextColor="#C4B49A"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
-                required={true}
+                autoCorrect={false}
+                onFocus={() => setFocusedField('email')}
+                onBlur={() => setFocusedField(null)}
+                editable={!loading}
               />
-              
-              <InputField
-                name="password"
-                icon="lock-closed-outline"
-                placeholder="Password"
+            </View>
+
+            {/* Password */}
+            <Text style={s.label}>Password <Text style={s.req}>*</Text></Text>
+            <View style={field('password')}>
+              <Ionicons name="lock-closed-outline" size={19} color={focusedField === 'password' ? C.saddle : C.muted} style={s.inputIcon} />
+              <TextInput
+                style={[s.input, { paddingRight: 40 }]}
+                placeholder="Min. 6 characters"
+                placeholderTextColor="#C4B49A"
                 value={password}
                 onChangeText={setPassword}
-                isPassword={true}
-                secureTextEntry={!showPassword}
-                showPassword={showPassword}
-                onTogglePassword={toggleShowPassword}
-                required={true}
+                secureTextEntry={!showPw}
+                autoCapitalize="none"
+                onFocus={() => setFocusedField('password')}
+                onBlur={() => setFocusedField(null)}
+                editable={!loading}
               />
-              
-              <InputField
-                name="confirmPassword"
-                icon="checkmark-circle-outline"
-                placeholder="Confirm Password"
+              <TouchableOpacity style={s.eyeBtn} onPress={togglePw}>
+                <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={19} color={C.muted} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Confirm password */}
+            <Text style={s.label}>Confirm Password <Text style={s.req}>*</Text></Text>
+            <View style={[field('confirm'), pwMismatch && s.inputWrapError, pwMatch && s.inputWrapOk]}>
+              <Ionicons name="checkmark-circle-outline" size={19} color={pwMatch ? C.green : focusedField === 'confirm' ? C.saddle : C.muted} style={s.inputIcon} />
+              <TextInput
+                style={[s.input, { paddingRight: 40 }]}
+                placeholder="Re-enter your password"
+                placeholderTextColor="#C4B49A"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
-                isPassword={true}
-                secureTextEntry={!showConfirmPassword}
-                showPassword={showConfirmPassword}
-                onTogglePassword={toggleShowConfirmPassword}
-                required={true}
+                secureTextEntry={!showConfirmPw}
+                autoCapitalize="none"
+                onFocus={() => setFocusedField('confirm')}
+                onBlur={() => setFocusedField(null)}
+                editable={!loading}
               />
+              <TouchableOpacity style={s.eyeBtn} onPress={toggleConfirmPw}>
+                <Ionicons name={showConfirmPw ? 'eye-off-outline' : 'eye-outline'} size={19} color={C.muted} />
+              </TouchableOpacity>
             </View>
+            {pwMismatch && <Text style={s.errorHint}>Passwords do not match</Text>}
+            {pwMatch    && <Text style={s.okHint}><Ionicons name="checkmark" size={12} /> Passwords match</Text>}
 
-            {/* Required Fields Notice */}
-            <View style={styles.requiredNotice}>
-              <Text style={styles.requiredNoticeText}>
-                <Text style={styles.asterisk}>* </Text>All fields are required
-              </Text>
-            </View>
+            {/* Terms */}
+            <Text style={s.terms}>
+              By creating an account, you agree to our{' '}
+              <Text style={s.termsLink}>Terms of Service</Text> and{' '}
+              <Text style={s.termsLink}>Privacy Policy</Text>.
+            </Text>
 
-            {/* Terms and Privacy */}
-            <View style={styles.termsContainer}>
-              <Text style={styles.termsText}>
-                By creating an account, you agree to our{' '}
-                <Text style={styles.termsLink}>Terms of Service</Text>
-                {' '}and{' '}
-                <Text style={styles.termsLink}>Privacy Policy</Text>
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={[styles.registerButton, loading && styles.buttonDisabled]}
-              onPress={handleRegister}
-              disabled={loading}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={['#A67C52', '#8B5A3C']} // Rich brown gradient
-                style={styles.buttonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Text style={styles.registerButtonText}>Create Account</Text>
-                    <Ionicons name="arrow-forward" size={20} color="#fff" style={styles.buttonIcon} />
-                  </>
-                )}
+            {/* Submit */}
+            <TouchableOpacity style={[s.submitBtn, loading && { opacity: 0.7 }]} onPress={handleRegister} disabled={loading} activeOpacity={0.85}>
+              <LinearGradient colors={[C.saddle, C.dark]} style={s.submitGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                {loading
+                  ? <ActivityIndicator color={C.white} size="small" />
+                  : <><Text style={s.submitText}>Create Account</Text><Ionicons name="arrow-forward" size={18} color={C.white} /></>
+                }
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* Social Registration Section */}
-            <View style={styles.socialSection}>
-              <View style={styles.dividerContainer}>
-                <View style={styles.divider} />
-                <Text style={styles.dividerText}>or sign up with</Text>
-                <View style={styles.divider} />
-              </View>
-              
-              <View style={styles.socialButtons}>
-                <TouchableOpacity style={styles.socialButton}>
-                  <Ionicons name="logo-google" size={24} color="#db4437" />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.socialButton}>
-                  <Ionicons name="logo-facebook" size={24} color="#4267B2" />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.socialButton}>
-                  <Ionicons name="logo-apple" size={24} color="#000" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
             {/* Footer */}
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-                <Text style={styles.loginText}>Sign In</Text>
+            <View style={s.footer}>
+              <Text style={s.footerText}>Already have an account? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Login')} disabled={loading}>
+                <Text style={s.footerLink}>Sign In</Text>
               </TouchableOpacity>
             </View>
           </View>
+
         </ScrollView>
       </LinearGradient>
     </KeyboardAvoidingView>
   );
-};
+}
 
-const styles = StyleSheet.create({
-  profileImageRequired: {
-    borderColor: '#ff6b6b',
-    borderWidth: 2,
-  },
-  requiredNotice: {
-    backgroundColor: 'rgba(166, 124, 82, 0.1)',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#A67C52',
-  },
-  requiredNoticeText: {
-    fontSize: 14,
-    color: '#8B5A3C',
-    fontWeight: '500',
-  },
-  asterisk: {
-    color: '#ff6b6b',
-    fontWeight: 'bold',
-  },
-  container: {
-    flex: 1,
-  },
-  gradientContainer: {
-    flex: 1,
-  },
-  scrollContainer: {
-    flexGrow: 1,
-  },
-  headerSection: {
-    alignItems: 'center',
-    paddingTop: 50,
-    paddingBottom: 30,
-    position: 'relative',
-  },
-  backButton: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  profileImageContainer: {
-    position: 'relative',
-    marginBottom: 25,
-    alignItems: 'center',
-  },
-  profileImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 4,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 15,
-  },
-  cameraIcon: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#A67C52',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  photoHint: {
-    marginTop: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 12,
-  },
-  photoHintText: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.9)',
-    textAlign: 'center',
-  },
-  welcomeText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 8,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.9)',
-    textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.2)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
-  },
-  formContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingHorizontal: 30,
-    paddingTop: 40,
-    paddingBottom: 30,
-  },
-  sectionContainer: {
-    marginBottom: 25,
-  },
-  sectionHeader: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2D3748',
-    marginBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F1ED',
-    borderRadius: 15,
-    marginBottom: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 5,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  inputWrapperFocused: {
-    borderColor: '#A67C52',
-    backgroundColor: '#FFFFFF',
-    shadowOpacity: 0.15,
-  },
-  inputIcon: {
-    marginRight: 15,
-  },
-  input: {
-    flex: 1,
-    height: 50,
-    color: '#2D3748',
-    fontSize: 16,
-  },
-  passwordInput: {
-    paddingRight: 40,
-  },
-  eyeIcon: {
-    position: 'absolute',
-    right: 20,
-    padding: 5,
-  },
-  termsContainer: {
-    marginBottom: 25,
-    paddingHorizontal: 5,
-  },
-  termsText: {
-    fontSize: 14,
-    color: '#718096',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  termsLink: {
-    color: '#A67C52',
-    fontWeight: '500',
-  },
-  registerButton: {
-    marginBottom: 25,
-    borderRadius: 15,
-    overflow: 'hidden',
-    height: 56,
-    shadowColor: '#A67C52',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 10,
-  },
-  buttonGradient: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  registerButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-    marginRight: 10,
-    textShadowColor: 'rgba(0, 0, 0, 0.2)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
-  },
-  buttonIcon: {
-    marginLeft: 5,
-  },
-  socialSection: {
-    marginBottom: 25,
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  divider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E8DDD4',
-  },
-  dividerText: {
-    marginHorizontal: 20,
-    color: '#718096',
-    fontSize: 14,
-  },
-  socialButtons: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 20,
-  },
-  socialButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#F5F1ED',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E8DDD4',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  footerText: {
-    color: '#718096',
-    fontSize: 16,
-  },
-  loginText: {
-    color: '#A67C52',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+const s = StyleSheet.create({
+  bg:               { flex: 1 },
+  scroll:           { flexGrow: 1, paddingHorizontal: 24, paddingTop: SB_HEIGHT + 16, paddingBottom: 40 },
+
+  circle:           { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.05)' },
+  circleTopRight:   { width: 260, height: 260, top: -80, right: -80 },
+  circleBottomLeft: { width: 200, height: 200, bottom: 60, left: -80 },
+
+  backBtn:          { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
+
+  brandSection:     { alignItems: 'center', marginBottom: 28 },
+  logoWrap:         { width: 80, height: 80, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 12, borderWidth: 1.5, borderColor: 'rgba(218,165,32,0.5)' },
+  logo:             { width: 62, height: 62, borderRadius: 12 },
+  brandName:        { fontSize: 22, fontWeight: '900', color: C.white, letterSpacing: 3, marginBottom: 4 },
+  brandSub:         { fontSize: 11, color: 'rgba(255,255,255,0.65)', textAlign: 'center' },
+
+  card:             { backgroundColor: C.white, borderRadius: 24, padding: 26, elevation: 12, shadowColor: C.dark, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 16 },
+  cardTitle:        { fontSize: 22, fontWeight: '800', color: C.dark, marginBottom: 4 },
+  cardSub:          { fontSize: 13, color: C.muted, marginBottom: 22, lineHeight: 18 },
+
+  // Avatar
+  avatarWrap:       { alignItems: 'center', marginBottom: 22 },
+  avatar:           { width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: C.gold },
+  avatarEmpty:      { borderColor: '#E8DDD0', borderStyle: 'dashed' },
+  cameraBtn:        { position: 'absolute', bottom: 22, right: width / 2 - 57, width: 30, height: 30, borderRadius: 15, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: C.white },
+  avatarHint:       { fontSize: 11, color: C.muted, marginTop: 6 },
+
+  // Inputs
+  label:            { fontSize: 13, fontWeight: '700', color: C.dark, marginBottom: 7 },
+  req:              { color: C.red },
+  inputWrap:        { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bg, borderRadius: 14, borderWidth: 1.5, borderColor: '#E8DDD0', paddingHorizontal: 14, height: 52, marginBottom: 16 },
+  inputWrapFocused: { borderColor: C.saddle, backgroundColor: C.cream },
+  inputWrapError:   { borderColor: C.red, backgroundColor: '#FFF5F5' },
+  inputWrapOk:      { borderColor: C.green, backgroundColor: '#F0FFF4' },
+  inputIcon:        { marginRight: 10 },
+  input:            { flex: 1, fontSize: 15, color: C.dark },
+  eyeBtn:           { position: 'absolute', right: 14, padding: 4 },
+  errorHint:        { fontSize: 12, color: C.red, marginTop: -10, marginBottom: 12, marginLeft: 4 },
+  okHint:           { fontSize: 12, color: C.green, marginTop: -10, marginBottom: 12, marginLeft: 4, fontWeight: '600' },
+
+  // Terms
+  terms:            { fontSize: 12, color: C.muted, textAlign: 'center', lineHeight: 18, marginBottom: 22, marginTop: 4 },
+  termsLink:        { color: C.saddle, fontWeight: '600' },
+
+  // Submit
+  submitBtn:        { borderRadius: 14, overflow: 'hidden', marginBottom: 22, elevation: 4, shadowColor: C.saddle, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+  submitGradient:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 15 },
+  submitText:       { fontSize: 16, fontWeight: '800', color: C.white, letterSpacing: 0.5 },
+
+  // Footer
+  footer:           { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  footerText:       { fontSize: 14, color: C.muted },
+  footerLink:       { fontSize: 14, fontWeight: '700', color: C.saddle },
 });
-
-export default Register;

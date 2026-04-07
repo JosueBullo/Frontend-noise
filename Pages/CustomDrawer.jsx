@@ -210,9 +210,7 @@ const CustomDrawer = ({ navigation, onClose }) => {
 
           {/* Logo + title */}
           <View style={styles.logoRow}>
-            <View style={styles.logoCircle}>
-              <Text style={styles.logoText}>NW</Text>
-            </View>
+            <Image source={require('../assets/logo.png')} style={styles.logoImg} resizeMode="contain" />
             <Text style={styles.logoTitle}>NOISEWATCH</Text>
           </View>
 
@@ -329,8 +327,7 @@ const styles = StyleSheet.create({
   header:           { paddingHorizontal: 20, paddingTop: 50, paddingBottom: 24, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
   closeBtn:         { alignSelf: 'flex-end', padding: 4, marginBottom: 8 },
   logoRow:          { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
-  logoCircle:       { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.25)', justifyContent: 'center', alignItems: 'center' },
-  logoText:         { color: C.cream, fontWeight: '800', fontSize: 13 },
+  logoImg:          { width: 36, height: 36, borderRadius: 8 },
   logoTitle:        { color: C.cream, fontWeight: '800', fontSize: 16, letterSpacing: 2 },
   profileSection:   { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, padding: 12, marginBottom: 14 },
   profileImage:     { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: C.cream, marginRight: 12 },

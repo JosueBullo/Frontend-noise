@@ -1,339 +1,489 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-  Animated,
-  StatusBar,
-  Dimensions,
-  Platform,
-  Easing,
-  ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, Modal, Animated,
+  StatusBar, Dimensions, Platform, Easing, ScrollView,
+  RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import CustomDrawer from './CustomDrawer';
 import API_BASE_URL from '../utils/api';
 
 const { width, height } = Dimensions.get('window');
+const SB_HEIGHT = Platform.OS === 'ios' ? (height >= 812 ? 44 : 20) : StatusBar.currentHeight || 24;
 
-const getStatusBarHeight = () => {
-  return Platform.OS === 'ios' ? (height >= 812 ? 44 : 20) : StatusBar.currentHeight || 24;
+const C = {
+  dark:   '#3E2C23',
+  saddle: '#8B4513',
+  gold:   '#DAA520',
+  cream:  '#FDF5E6',
+  bg:     '#F5F0E8',
+  white:  '#FFFFFF',
+  green:  '#4CAF50',
+  yellow: '#FFC107',
+  red:    '#F44336',
+  purple: '#9C27B0',
+  blue:   '#2196F3',
+  text:   '#333333',
+  sub:    '#8B7355',
+  muted:  '#A89070',
 };
 
-const Home = ({ navigation }) => {
-  const [drawerVisible, setDrawerVisible] = useState(false);
-  const [userName] = useState('User');
-  const [currentDb, setCurrentDb] = useState(42);
-  const [totalUsers, setTotalUsers] = useState(0);
-  const [totalReports, setTotalReports] = useState(0);
-  const slideAnim = useRef(new Animated.Value(-width * 0.8)).current;
-  const overlayOpacity = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+const LEVEL_COLOR = { green: C.green, yellow: '#F57F17', red: C.red, critical: C.purple };
+const LEVEL_BG    = { green: '#E8F5E9', yellow: '#FFF9C4', red: '#FFEBEE', critical: '#F3E5F5' };
+const LEVEL_LABEL = { green: 'Low', yellow: 'Medium', red: 'High', critical: 'Critical' };
 
+const getReasonIcon = (reason) => {
+  if (!reason) return 'megaphone-outline';
+  const r = reason.toLowerCase();
+  if (r.includes('music') || r.includes('party')) return 'musical-notes-outline';
+  if (r.includes('vehicle') || r.includes('traffic') || r.includes('car')) return 'car-outline';
+  if (r.includes('construction') || r.includes('machinery')) return 'construct-outline';
+  if (r.includes('animal') || r.includes('dog')) return 'paw-outline';
+  if (r.includes('industrial')) return 'business-outline';
+  if (r.includes('shout') || r.includes('people')) return 'people-outline';
+  return 'megaphone-outline';
+};
+
+const formatTimeAgo = (ts) => {
+  const d = new Date(ts), now = new Date();
+  const dm = Math.floor((now - d) / 60000), dh = Math.floor(dm / 60), dd = Math.floor(dh / 24);
+  if (dm < 1) return 'Just now';
+  if (dm < 60) return `${dm}m ago`;
+  if (dh < 24) return `${dh}h ago`;
+  if (dd < 7) return `${dd}d ago`;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+const getLocationStr = (loc) => {
+  if (!loc) return null;
+  if (typeof loc === 'string') return loc;
+  const addr = loc.address || {};
+  return addr.formattedAddress || addr.street
+    ? `${addr.street || ''}${addr.city ? ', ' + addr.city : ''}`.trim()
+    : addr.city || loc.formattedAddress || null;
+};
+
+// ── Fade-slide animation wrapper ─────────────────────────────────────────────
+function FadeIn({ delay = 0, children }) {
+  const opacity    = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(20)).current;
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentDb(Math.floor(Math.random() * (90 - 30) + 30));
-    }, 2000);
-    
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 1000,
-      useNativeDriver: true,
-    }).start();
+    Animated.parallel([
+      Animated.timing(opacity,    { toValue: 1, duration: 450, delay, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 450, delay, useNativeDriver: true }),
+    ]).start();
+  }, [delay, opacity, translateY]);
+  return <Animated.View style={{ opacity, transform: [{ translateY }] }}>{children}</Animated.View>;
+}
 
-    // Fetch total users
-    fetch(`${API_BASE_URL}/user/countUsersOnly`)
-      .then(res => res.json())
-      .then(data => setTotalUsers(data.totalUsers || 0))
-      .catch(err => console.error('Error fetching users:', err));
+export default function Home({ navigation }) {
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  const slideAnim   = useRef(new Animated.Value(-width * 0.82)).current;
+  const overlayAnim = useRef(new Animated.Value(0)).current;
 
-    // Fetch total reports
-    fetch(`${API_BASE_URL}/reports/total-reports`)
-      .then(res => res.json())
-      .then(data => setTotalReports(data.totalReports || 0))
-      .catch(err => console.error('Error fetching reports:', err));
-    
-    return () => clearInterval(interval);
-  }, []);
+  const [userName, setUserName]       = useState('');
+  const [totalUsers, setTotalUsers]   = useState(0);
+  const [totalReports, setTotalReports] = useState(0);
+  const [recentReports, setRecentReports] = useState([]);
+  const [hotspots, setHotspots]       = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [refreshing, setRefreshing]   = useState(false);
+  const [fetchError, setFetchError]   = useState(null);
 
+  // ── Drawer ──────────────────────────────────────────────────
   const openDrawer = () => {
     setDrawerVisible(true);
     Animated.parallel([
-      Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
-      Animated.timing(overlayOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(slideAnim,   { toValue: 0,             duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(overlayAnim, { toValue: 1,             duration: 320, useNativeDriver: true }),
     ]).start();
   };
-
   const closeDrawer = () => {
     Animated.parallel([
-      Animated.timing(slideAnim, { toValue: -width * 0.8, duration: 300, useNativeDriver: true }),
-      Animated.timing(overlayOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+      Animated.timing(slideAnim,   { toValue: -width * 0.82, duration: 280, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(overlayAnim, { toValue: 0,             duration: 250, useNativeDriver: true }),
     ]).start(() => setDrawerVisible(false));
   };
 
-  const recentReports = [
-    { id: 1, type: 'Construction', distance: '0.2 km', time: '2 mins ago', level: 78 },
-    { id: 2, type: 'Traffic', distance: '0.5 km', time: '15 mins ago', level: 65 },
-    { id: 3, type: 'Event', distance: '1.2 km', time: '1 hour ago', level: 82 },
+  // ── Fetch all data ───────────────────────────────────────────
+  const fetchData = useCallback(async (isRefresh = false) => {
+    try {
+      isRefresh ? setRefreshing(true) : setLoading(true);
+      setFetchError(null);
+
+      const token = await AsyncStorage.getItem('userToken');
+      const stored = await AsyncStorage.getItem('userData');
+      if (stored) {
+        const u = JSON.parse(stored);
+        setUserName(u.username || u.name || 'User');
+      }
+
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      const [usersRes, reportsCountRes, reportsRes, hotspotsRes] = await Promise.allSettled([
+        fetch(`${API_BASE_URL}/user/countUsersOnly`, { headers }),
+        fetch(`${API_BASE_URL}/reports/total-reports`, { headers }),
+        fetch(`${API_BASE_URL}/reports/get-report`, { headers }),
+        fetch(`${API_BASE_URL}/analytics/top-locations?period=weekly&limit=5`, { headers }),
+      ]);
+
+      if (usersRes.status === 'fulfilled' && usersRes.value.ok) {
+        const d = await usersRes.value.json();
+        setTotalUsers(d.totalUsers || 0);
+      }
+      if (reportsCountRes.status === 'fulfilled' && reportsCountRes.value.ok) {
+        const d = await reportsCountRes.value.json();
+        setTotalReports(d.totalReports || 0);
+      }
+      if (reportsRes.status === 'fulfilled' && reportsRes.value.ok) {
+        const data = await reportsRes.value.json();
+        // Take the 5 most recent
+        setRecentReports((data || []).slice(0, 5));
+      }
+      if (hotspotsRes.status === 'fulfilled' && hotspotsRes.value.ok) {
+        const d = await hotspotsRes.value.json();
+        setHotspots(d.topLocations || []);
+      }
+    } catch (e) {
+      setFetchError('Could not load data. Pull to refresh.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const onRefresh = () => fetchData(true);
+
+  // ── Quick actions ────────────────────────────────────────────
+  const quickActions = [
+    { icon: 'mic-outline',          label: 'Record',      color: C.red,    route: 'Record'        },
+    { icon: 'map-outline',          label: 'Noise Map',   color: '#43A047', route: 'MapScreen'    },
+    { icon: 'time-outline',         label: 'My History',  color: C.blue,   route: 'ReportHistory' },
+    { icon: 'notifications-outline',label: 'Alerts',      color: C.gold,   route: 'Notifications' },
   ];
 
-  const noiseHotspots = [
-    { x: 30, y: 40, intensity: 0.8 },
-    { x: 60, y: 25, intensity: 0.6 },
-    { x: 20, y: 70, intensity: 0.9 },
-    { x: 80, y: 50, intensity: 0.4 },
-  ];
-
-  const getDbColor = (db) => {
-    if (db < 50) return '#8B7355';
-    if (db < 70) return '#D4AC0D';
-    if (db < 85) return '#E67E22';
-    return '#E74C3C';
+  // ── Dominant noise level for hotspot ────────────────────────
+  const dominantLevel = (breakdown) => {
+    if (!breakdown) return 'green';
+    const order = ['critical', 'red', 'yellow', 'green'];
+    for (const lvl of order) { if (breakdown[lvl] > 0) return lvl; }
+    return 'green';
   };
 
+  if (loading) return (
+    <View style={s.loadingScreen}>
+      <ActivityIndicator size="large" color={C.saddle} />
+      <Text style={s.loadingText}>Loading...</Text>
+    </View>
+  );
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#8B4513" />
-      
-      <LinearGradient colors={['#8B4513', '#654321']} style={styles.header}>
-        <View style={styles.headerContent}>
-          <View style={styles.headerTop}>
-            <TouchableOpacity onPress={openDrawer} style={styles.headerButton}>
-              <Ionicons name="menu" size={28} color="#D4AC0D" />
+    <View style={s.root}>
+      <StatusBar barStyle="light-content" backgroundColor={C.dark} />
+
+      {/* ── Header ── */}
+      <LinearGradient colors={[C.dark, C.saddle]} style={s.header}>
+        <View style={{ paddingTop: SB_HEIGHT + 8, paddingHorizontal: 20, paddingBottom: 20 }}>
+          <View style={s.headerTop}>
+            <TouchableOpacity onPress={openDrawer} style={s.headerBtn}>
+              <Ionicons name="menu" size={26} color={C.gold} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={styles.headerButton}>
-              <Ionicons name="settings" size={28} color="#D4AC0D" />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={s.headerGreeting}>Welcome back,</Text>
+              <Text style={s.headerName} numberOfLines={1}>{userName || 'User'} 👋</Text>
+            </View>
+            <TouchableOpacity style={s.headerBtn} onPress={() => navigation.navigate('UserProfile')}>
+              <Ionicons name="person-circle-outline" size={28} color={C.gold} />
             </TouchableOpacity>
           </View>
-          <Text style={styles.headerTitle}>Welcome back, {userName}!</Text>
-          <Text style={styles.headerSubtitle}>Monitor your noise environment</Text>
+
+          {/* Stats row in header */}
+          <View style={s.headerStats}>
+            <View style={s.headerStat}>
+              <Text style={s.headerStatNum}>{totalUsers.toLocaleString()}</Text>
+              <Text style={s.headerStatLabel}>Active Users</Text>
+            </View>
+            <View style={s.headerStatDivider} />
+            <View style={s.headerStat}>
+              <Text style={s.headerStatNum}>{totalReports.toLocaleString()}</Text>
+              <Text style={s.headerStatLabel}>Total Reports</Text>
+            </View>
+            <View style={s.headerStatDivider} />
+            <View style={s.headerStat}>
+              <Text style={s.headerStatNum}>{recentReports.length}</Text>
+              <Text style={s.headerStatLabel}>Recent</Text>
+            </View>
+          </View>
         </View>
       </LinearGradient>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
-        
-        {/* Welcome Card */}
-        <Animated.View style={[styles.welcomeCard, { opacity: fadeAnim }]}>
-          <View style={styles.welcomeIcon}>
-            <Ionicons name="volume-high" size={40} color="#8B4513" />
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.saddle]} tintColor={C.saddle} />}
+      >
+        {fetchError && (
+          <View style={s.errorBanner}>
+            <Ionicons name="alert-circle-outline" size={16} color={C.red} />
+            <Text style={s.errorText}>{fetchError}</Text>
           </View>
-          <Text style={styles.welcomeTitle}>Welcome to NoiseWatch</Text>
-          <Text style={styles.welcomeText}>
-            Your personal noise monitoring companion. Track, report, and analyze noise pollution in your environment. Together, we create quieter, healthier communities.
-          </Text>
-          <View style={styles.welcomeStats}>
-            <View style={styles.welcomeStat}>
-              <Text style={styles.welcomeStatNum}>{totalUsers.toLocaleString()}</Text>
-              <Text style={styles.welcomeStatLabel}>Active Users</Text>
-            </View>
-            <View style={styles.welcomeStat}>
-              <Text style={styles.welcomeStatNum}>{totalReports.toLocaleString()}</Text>
-              <Text style={styles.welcomeStatLabel}>Total Reports</Text>
-            </View>
-          </View>
-        </Animated.View>
+        )}
 
-        {/* How It Works */}
-        <View style={styles.howItWorksCard}>
-          <Text style={styles.sectionTitle}>🎯 How It Works</Text>
-          
-          <View style={styles.stepItem}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumberText}>1</Text>
-            </View>
-            <View style={styles.stepContent}>
-              <Text style={styles.stepTitle}>Monitor Noise</Text>
-              <Text style={styles.stepText}>Real-time decibel readings from your environment</Text>
-            </View>
-          </View>
-
-          <View style={styles.stepItem}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumberText}>2</Text>
-            </View>
-            <View style={styles.stepContent}>
-              <Text style={styles.stepTitle}>Report Issues</Text>
-              <Text style={styles.stepText}>Share noise problems in your community</Text>
-            </View>
-          </View>
-
-          <View style={styles.stepItem}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumberText}>3</Text>
-            </View>
-            <View style={styles.stepContent}>
-              <Text style={styles.stepTitle}>View Hotspots</Text>
-              <Text style={styles.stepText}>See noise pollution maps and trends</Text>
-            </View>
-          </View>
-
-          <View style={styles.stepItem}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumberText}>4</Text>
-            </View>
-            <View style={styles.stepContent}>
-              <Text style={styles.stepTitle}>Make Impact</Text>
-              <Text style={styles.stepText}>Help create quieter, healthier spaces</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Recent Reports Nearby */}
-        <View style={styles.reportsSection}>
-          <Text style={styles.sectionTitle}>📍 Recent Reports Nearby</Text>
-          {recentReports.map((report) => (
-            <View key={report.id} style={styles.reportCard}>
-              <View style={styles.reportHeader}>
-                <View style={styles.reportIcon}>
-                  <Ionicons 
-                    name={
-                      report.type === 'Construction' ? 'construct' :
-                      report.type === 'Traffic' ? 'car' : 'musical-notes'
-                    } 
-                    size={20} 
-                    color="#8B4513" 
-                  />
-                </View>
-                <View style={styles.reportInfo}>
-                  <Text style={styles.reportType}>{report.type}</Text>
-                  <Text style={styles.reportDistance}>{report.distance} • {report.time}</Text>
-                </View>
-                <View style={[styles.levelBadge, { backgroundColor: getDbColor(report.level) }]}>
-                  <Text style={styles.levelText}>{report.level}dB</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        {/* Mini Map Preview */}
-        <View style={styles.mapSection}>
-          <Text style={styles.sectionTitle}>🗺️ Noise Hotspots</Text>
-          <View style={styles.miniMap}>
-            <View style={styles.mapGrid}>
-              {noiseHotspots.map((hotspot, index) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.hotspot,
-                    {
-                      left: `${hotspot.x}%`,
-                      top: `${hotspot.y}%`,
-                      backgroundColor: `rgba(212, 172, 13, ${hotspot.intensity})`,
-                    }
-                  ]}
-                />
+        {/* ── Quick Actions ── */}
+        <FadeIn delay={0}>
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Quick Actions</Text>
+            <View style={s.quickActionsGrid}>
+              {quickActions.map((a, i) => (
+                <TouchableOpacity key={i} style={s.quickActionCard} onPress={() => navigation.navigate(a.route)} activeOpacity={0.8}>
+                  <View style={[s.quickActionIcon, { backgroundColor: a.color + '18' }]}>
+                    <Ionicons name={a.icon} size={26} color={a.color} />
+                  </View>
+                  <Text style={s.quickActionLabel}>{a.label}</Text>
+                </TouchableOpacity>
               ))}
-              <View style={styles.yourLocation}>
-                <Ionicons name="location" size={16} color="#8B4513" />
-              </View>
-            </View>
-            <View style={styles.mapLegend}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendColor, { backgroundColor: '#D4AC0D' }]} />
-                <Text style={styles.legendText}>High Noise</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendColor, { backgroundColor: '#8B7355' }]} />
-                <Text style={styles.legendText}>Moderate</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <Ionicons name="location" size={12} color="#8B4513" />
-                <Text style={styles.legendText}>You</Text>
-              </View>
             </View>
           </View>
-        </View>
+        </FadeIn>
 
-        {/* Call to Action */}
-        <View style={styles.ctaCard}>
-          <Text style={styles.ctaTitle}>Ready to Get Started?</Text>
-          <Text style={styles.ctaText}>Begin monitoring noise levels and contribute to your community</Text>
-          <TouchableOpacity style={styles.ctaButton} onPress={() => navigation.navigate('Record')}>
-            <LinearGradient colors={['#D4AC0D', '#B8860B']} style={styles.ctaGradient}>
-              <Ionicons name="mic" size={20} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.ctaButtonText}>Start Recording</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
+        {/* ── Recent Reports ── */}
+        <FadeIn delay={80}>
+          <View style={s.section}>
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionTitle}>Recent Reports</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('ReportHistory')}>
+                <Text style={s.seeAll}>See all</Text>
+              </TouchableOpacity>
+            </View>
 
+            {recentReports.length === 0 ? (
+              <View style={s.emptyCard}>
+                <Ionicons name="document-text-outline" size={40} color="#CCC" />
+                <Text style={s.emptyText}>No reports yet</Text>
+                <Text style={s.emptySub}>Be the first to report a noise disturbance</Text>
+              </View>
+            ) : (
+              recentReports.map((r, i) => {
+                const level = r.noiseLevel || 'green';
+                const loc   = getLocationStr(r.location);
+                const label = r.topDetection || r.aiSummary?.topDetection || r.reason || 'Noise Report';
+                return (
+                  <View key={r._id || i} style={s.reportCard}>
+                    <View style={[s.reportIconWrap, { backgroundColor: LEVEL_BG[level] || '#F5F5F5' }]}>
+                      <Ionicons name={getReasonIcon(label)} size={20} color={LEVEL_COLOR[level] || C.sub} />
+                    </View>
+                    <View style={s.reportInfo}>
+                      <Text style={s.reportLabel} numberOfLines={1}>{label}</Text>
+                      {loc && <Text style={s.reportLoc} numberOfLines={1}><Ionicons name="location-outline" size={11} color={C.muted} /> {loc}</Text>}
+                      <Text style={s.reportTime}>{formatTimeAgo(r.createdAt)}</Text>
+                    </View>
+                    <View style={s.reportRight}>
+                      <View style={[s.levelBadge, { backgroundColor: LEVEL_BG[level] || '#F5F5F5' }]}>
+                        <View style={[s.levelDot, { backgroundColor: LEVEL_COLOR[level] || C.sub }]} />
+                        <Text style={[s.levelText, { color: LEVEL_COLOR[level] || C.sub }]}>{LEVEL_LABEL[level] || level}</Text>
+                      </View>
+                      {r.aiSummary?.averageDecibel != null && (
+                        <Text style={s.dbText}>🔊 {r.aiSummary.averageDecibel} dB</Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </FadeIn>
+
+        {/* ── Noise Hotspots ── */}
+        <FadeIn delay={160}>
+          <View style={s.section}>
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionTitle}>Noise Hotspots</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('MapScreen')}>
+                <Text style={s.seeAll}>View map</Text>
+              </TouchableOpacity>
+            </View>
+
+            {hotspots.length === 0 ? (
+              <View style={s.emptyCard}>
+                <Ionicons name="map-outline" size={40} color="#CCC" />
+                <Text style={s.emptyText}>No hotspot data yet</Text>
+                <Text style={s.emptySub}>Hotspots appear as reports accumulate</Text>
+              </View>
+            ) : (
+              hotspots.map((h, i) => {
+                const lvl = dominantLevel(h.noiseBreakdown);
+                return (
+                  <View key={i} style={s.hotspotCard}>
+                    <View style={s.hotspotRank}>
+                      <Text style={s.hotspotRankText}>#{h.rank || i + 1}</Text>
+                    </View>
+                    <View style={s.hotspotInfo}>
+                      <Text style={s.hotspotLocation} numberOfLines={2}>{h.location}</Text>
+                      <View style={s.hotspotMeta}>
+                        <Ionicons name="document-text-outline" size={12} color={C.muted} />
+                        <Text style={s.hotspotCount}>{h.count} report{h.count !== 1 ? 's' : ''}</Text>
+                        {h.noiseBreakdown && Object.keys(h.noiseBreakdown).length > 0 && (
+                          <View style={s.hotspotBreakdown}>
+                            {Object.entries(h.noiseBreakdown).map(([lvl2, cnt]) => (
+                              <View key={lvl2} style={[s.breakdownDot, { backgroundColor: LEVEL_COLOR[lvl2] || C.sub }]}>
+                                <Text style={s.breakdownDotText}>{cnt}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                    <View style={[s.hotspotBadge, { backgroundColor: LEVEL_BG[lvl] }]}>
+                      <Text style={[s.hotspotBadgeText, { color: LEVEL_COLOR[lvl] }]}>{LEVEL_LABEL[lvl]}</Text>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </FadeIn>
+
+        {/* ── How It Works ── */}
+        <FadeIn delay={240}>
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>How It Works</Text>
+            <View style={s.howCard}>
+              {[
+                { step: '1', icon: 'mic-outline',          color: C.red,    title: 'Record Noise',     desc: 'Capture audio evidence of noise disturbances with AI-powered analysis.' },
+                { step: '2', icon: 'send-outline',         color: C.blue,   title: 'Submit Report',    desc: 'Report is tagged with your location and forwarded to barangay officials.' },
+                { step: '3', icon: 'notifications-outline',color: C.gold,   title: 'Track Status',     desc: 'Receive real-time updates as officials respond to your complaint.' },
+                { step: '4', icon: 'map-outline',          color: '#43A047',title: 'View Hotspots',    desc: 'Explore the community noise map and identify high-disturbance zones.' },
+              ].map((item, i) => (
+                <View key={i} style={s.howStep}>
+                  <View style={[s.howStepCircle, { backgroundColor: item.color }]}>
+                    <Ionicons name={item.icon} size={18} color={C.white} />
+                  </View>
+                  {i < 3 && <View style={s.howConnector} />}
+                  <View style={s.howStepContent}>
+                    <Text style={s.howStepTitle}>{item.title}</Text>
+                    <Text style={s.howStepDesc}>{item.desc}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        </FadeIn>
+
+        {/* ── CTA ── */}
+        <FadeIn delay={320}>
+          <LinearGradient colors={[C.saddle, C.dark]} style={s.ctaCard}>
+            <Ionicons name="mic-circle-outline" size={40} color={C.gold} />
+            <Text style={s.ctaTitle}>Hear something disturbing?</Text>
+            <Text style={s.ctaDesc}>Record and report it now. Help make your community quieter.</Text>
+            <TouchableOpacity style={s.ctaBtn} onPress={() => navigation.navigate('Record')} activeOpacity={0.85}>
+              <Ionicons name="mic" size={18} color={C.saddle} />
+              <Text style={s.ctaBtnText}>Start Recording</Text>
+            </TouchableOpacity>
+          </LinearGradient>
+        </FadeIn>
       </ScrollView>
 
+      {/* ── Drawer ── */}
       <Modal visible={drawerVisible} transparent animationType="none" onRequestClose={closeDrawer}>
-        <View style={styles.modalContainer}>
-          <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]}>
+        <View style={{ flex: 1, flexDirection: 'row' }}>
+          <Animated.View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', opacity: overlayAnim }}>
             <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={closeDrawer} />
           </Animated.View>
-          <Animated.View style={[styles.drawerContainer, { transform: [{ translateX: slideAnim }] }]}>
+          <Animated.View style={[s.drawerWrap, { transform: [{ translateX: slideAnim }] }]}>
             <CustomDrawer navigation={navigation} onClose={closeDrawer} />
           </Animated.View>
         </View>
       </Modal>
     </View>
   );
-};
+}
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFF8DC' },
-  header: { paddingBottom: 30, paddingTop: getStatusBarHeight(), borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
-  headerContent: { paddingHorizontal: 20, paddingTop: 20 },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
-  headerButton: { padding: 8, borderRadius: 20, backgroundColor: 'rgba(212, 172, 13, 0.2)' },
-  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#fff', marginBottom: 5 },
-  headerSubtitle: { fontSize: 16, color: 'rgba(255, 255, 255, 0.8)' },
-  scrollView: { flex: 1, paddingTop: 20 },
-  
-  welcomeCard: { backgroundColor: '#fff', margin: 15, borderRadius: 20, padding: 30, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 4 },
-  welcomeIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#FFF8DC', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  welcomeTitle: { fontSize: 24, fontWeight: 'bold', color: '#8B4513', marginBottom: 12, textAlign: 'center' },
-  welcomeText: { fontSize: 15, color: '#666', textAlign: 'center', lineHeight: 22, marginBottom: 20 },
-  welcomeStats: { flexDirection: 'row', width: '100%', justifyContent: 'space-around', paddingTop: 20, borderTopWidth: 1, borderTopColor: '#E0E0E0' },
-  welcomeStat: { alignItems: 'center' },
-  welcomeStatNum: { fontSize: 22, fontWeight: 'bold', color: '#D4AC0D' },
-  welcomeStatLabel: { fontSize: 12, color: '#666', marginTop: 4 },
+const s = StyleSheet.create({
+  root:           { flex: 1, backgroundColor: C.bg },
+  loadingScreen:  { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.bg },
+  loadingText:    { marginTop: 12, color: C.saddle, fontSize: 15 },
 
-  howItWorksCard: { backgroundColor: '#fff', margin: 15, borderRadius: 20, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 4 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#8B4513', marginBottom: 15 },
-  stepItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20 },
-  stepNumber: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#D4AC0D', alignItems: 'center', justifyContent: 'center', marginRight: 15 },
-  stepNumberText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
-  stepContent: { flex: 1, paddingTop: 2 },
-  stepTitle: { fontSize: 16, fontWeight: '600', color: '#8B4513', marginBottom: 4 },
-  stepText: { fontSize: 13, color: '#666', lineHeight: 18 },
+  // Header
+  header:         {},
+  headerTop:      { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  headerBtn:      { padding: 6 },
+  headerGreeting: { fontSize: 12, color: 'rgba(255,255,255,0.7)' },
+  headerName:     { fontSize: 18, fontWeight: '800', color: C.white },
+  headerStats:    { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 8 },
+  headerStat:     { flex: 1, alignItems: 'center' },
+  headerStatNum:  { fontSize: 18, fontWeight: '800', color: C.white },
+  headerStatLabel:{ fontSize: 10, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  headerStatDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginVertical: 4 },
 
-  reportsSection: { backgroundColor: '#fff', margin: 15, borderRadius: 20, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 4 },
-  reportCard: { backgroundColor: '#FFF8DC', borderRadius: 12, padding: 15, marginBottom: 10 },
-  reportHeader: { flexDirection: 'row', alignItems: 'center' },
-  reportIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#D4AC0D', alignItems: 'center', justifyContent: 'center' },
-  reportInfo: { flex: 1, marginLeft: 15 },
-  reportType: { fontSize: 16, fontWeight: '600', color: '#8B4513' },
-  reportDistance: { fontSize: 12, color: '#666', marginTop: 2 },
-  levelBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-  levelText: { color: '#fff', fontSize: 10, fontWeight: '600' },
+  // Error
+  errorBanner:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFEBEE', marginHorizontal: 16, marginTop: 12, borderRadius: 10, padding: 12 },
+  errorText:      { flex: 1, fontSize: 13, color: C.red },
 
-  mapSection: { backgroundColor: '#fff', margin: 15, borderRadius: 20, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 4 },
-  miniMap: { height: 150, backgroundColor: '#F5F5DC', borderRadius: 12, overflow: 'hidden' },
-  mapGrid: { flex: 1, position: 'relative' },
-  hotspot: { position: 'absolute', width: 20, height: 20, borderRadius: 10 },
-  yourLocation: { position: 'absolute', top: '45%', left: '45%', width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 },
-  mapLegend: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 10, backgroundColor: '#fff' },
-  legendItem: { flexDirection: 'row', alignItems: 'center' },
-  legendColor: { width: 10, height: 10, borderRadius: 5, marginRight: 5 },
-  legendText: { fontSize: 10, color: '#666' },
+  // Section
+  section:        { paddingHorizontal: 16, paddingTop: 20 },
+  sectionHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle:   { fontSize: 16, fontWeight: '800', color: C.dark, marginBottom: 12 },
+  seeAll:         { fontSize: 13, color: C.saddle, fontWeight: '600' },
 
-  ctaCard: { backgroundColor: '#fff', margin: 15, borderRadius: 20, padding: 30, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 4 },
-  ctaTitle: { fontSize: 20, fontWeight: 'bold', color: '#8B4513', marginBottom: 8, textAlign: 'center' },
-  ctaText: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 20 },
-  ctaButton: { width: '100%' },
-  ctaGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 12 },
-  ctaButtonText: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  // Quick actions
+  quickActionsGrid: { flexDirection: 'row', gap: 10 },
+  quickActionCard:  { flex: 1, backgroundColor: C.white, borderRadius: 16, padding: 14, alignItems: 'center', elevation: 2, shadowColor: C.dark, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3 },
+  quickActionIcon:  { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  quickActionLabel: { fontSize: 11, fontWeight: '700', color: C.dark, textAlign: 'center' },
 
-  modalContainer: { flex: 1, flexDirection: 'row' },
-  drawerContainer: { width: width * 0.8, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 2, height: 0 }, shadowOpacity: 0.25, shadowRadius: 10, elevation: 5, position: 'absolute', left: 0, top: 0, bottom: 0 },
-  overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)' },
+  // Report cards
+  reportCard:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.white, borderRadius: 14, padding: 14, marginBottom: 10, elevation: 2, shadowColor: C.dark, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 3, gap: 12 },
+  reportIconWrap: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  reportInfo:     { flex: 1 },
+  reportLabel:    { fontSize: 14, fontWeight: '700', color: C.dark, marginBottom: 3 },
+  reportLoc:      { fontSize: 11, color: C.muted, marginBottom: 2 },
+  reportTime:     { fontSize: 11, color: C.muted },
+  reportRight:    { alignItems: 'flex-end', gap: 4 },
+  levelBadge:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, gap: 4 },
+  levelDot:       { width: 6, height: 6, borderRadius: 3 },
+  levelText:      { fontSize: 10, fontWeight: '700' },
+  dbText:         { fontSize: 10, color: C.muted },
+
+  // Hotspot cards
+  hotspotCard:    { flexDirection: 'row', alignItems: 'center', backgroundColor: C.white, borderRadius: 14, padding: 14, marginBottom: 10, elevation: 2, shadowColor: C.dark, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 3, gap: 12 },
+  hotspotRank:    { width: 32, height: 32, borderRadius: 16, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  hotspotRankText:{ fontSize: 12, fontWeight: '800', color: C.white },
+  hotspotInfo:    { flex: 1 },
+  hotspotLocation:{ fontSize: 13, fontWeight: '700', color: C.dark, marginBottom: 4 },
+  hotspotMeta:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  hotspotCount:   { fontSize: 11, color: C.muted },
+  hotspotBreakdown: { flexDirection: 'row', gap: 4 },
+  breakdownDot:   { width: 18, height: 18, borderRadius: 9, justifyContent: 'center', alignItems: 'center' },
+  breakdownDotText: { fontSize: 9, color: C.white, fontWeight: '800' },
+  hotspotBadge:   { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  hotspotBadgeText: { fontSize: 10, fontWeight: '700' },
+
+  // Empty state
+  emptyCard:      { backgroundColor: C.white, borderRadius: 14, padding: 28, alignItems: 'center', elevation: 1 },
+  emptyText:      { fontSize: 15, fontWeight: '600', color: '#999', marginTop: 10 },
+  emptySub:       { fontSize: 12, color: '#BBB', marginTop: 4, textAlign: 'center' },
+
+  // How it works
+  howCard:        { backgroundColor: C.white, borderRadius: 16, padding: 18, elevation: 2, shadowColor: C.dark, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3 },
+  howStep:        { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 0 },
+  howStepCircle:  { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  howConnector:   { position: 'absolute', left: 19, top: 40, width: 2, height: 28, backgroundColor: '#E8DDD0' },
+  howStepContent: { flex: 1, paddingLeft: 14, paddingBottom: 28 },
+  howStepTitle:   { fontSize: 14, fontWeight: '800', color: C.dark, marginBottom: 4 },
+  howStepDesc:    { fontSize: 12, color: C.sub, lineHeight: 18 },
+
+  // CTA
+  ctaCard:        { marginHorizontal: 16, marginTop: 20, borderRadius: 20, padding: 28, alignItems: 'center', gap: 10 },
+  ctaTitle:       { fontSize: 18, fontWeight: '800', color: C.white, textAlign: 'center' },
+  ctaDesc:        { fontSize: 13, color: 'rgba(255,255,255,0.8)', textAlign: 'center', lineHeight: 19 },
+  ctaBtn:         { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.gold, paddingHorizontal: 28, paddingVertical: 14, borderRadius: 30, marginTop: 6 },
+  ctaBtnText:     { fontSize: 15, fontWeight: '800', color: C.saddle },
+
+  // Drawer
+  drawerWrap:     { width: width * 0.82, position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: C.white, elevation: 5 },
 });
-
-export default Home;
