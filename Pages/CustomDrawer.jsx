@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Dimensions, Alert, ActivityIndicator,
+  ScrollView, Dimensions, Alert, ActivityIndicator, Modal, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,12 +17,89 @@ const C = {
   cream: '#FDF5E6', white: '#FFFFFF', red: '#E74C3C', sub: '#8B7355',
 };
 
+// ── Logout loading overlay ───────────────────────────────────────────────────
+const LOGOUT_STEPS = [
+  { label: 'Clearing session',      threshold: 30 },
+  { label: 'Removing credentials',  threshold: 65 },
+  { label: 'Redirecting',           threshold: 90 },
+];
+
+function LogoutLoadingOverlay({ visible }) {
+  const logoSpin = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [pct, setPct] = useState(0);
+
+  useEffect(() => {
+    if (!visible) { fadeAnim.setValue(0); logoSpin.setValue(0); setPct(0); return; }
+
+    Animated.timing(fadeAnim, { toValue: 1, duration: 280, useNativeDriver: true }).start();
+    Animated.loop(
+      Animated.timing(logoSpin, { toValue: 1, duration: 1100, useNativeDriver: true })
+    ).start();
+
+    let current = 0;
+    const interval = setInterval(() => {
+      current += current < 30 ? 3.5 : current < 65 ? 2.5 : current < 90 ? 1.5 : 0.8;
+      if (current >= 100) { current = 100; clearInterval(interval); }
+      setPct(current);
+    }, 60);
+    return () => clearInterval(interval);
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const spin = logoSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const roundPct = Math.min(Math.round(pct), 100);
+
+  return (
+    <Modal visible={visible} transparent animationType="none">
+      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+        <LinearGradient colors={[C.dark, C.saddle]} style={lo.inner}>
+          <View style={lo.logoWrap}>
+            <Animated.View style={[lo.logoRing, { transform: [{ rotate: spin }] }]} />
+            <Image source={require('../assets/logo.png')} style={lo.logo} resizeMode="contain" />
+          </View>
+
+          <Text style={lo.title}>Signing Out</Text>
+          <Text style={lo.subtitle}>Please wait...</Text>
+
+          <View style={lo.barTrack}>
+            <View style={[lo.barFill, { width: `${roundPct}%` }]} />
+          </View>
+          <Text style={lo.pct}>{roundPct}% complete</Text>
+
+          <View style={lo.steps}>
+            {LOGOUT_STEPS.map((step, i) => {
+              const done = roundPct >= step.threshold;
+              return (
+                <View key={i} style={lo.stepRow}>
+                  <View style={[lo.stepDot, done && lo.stepDotDone]}>
+                    {done
+                      ? <Ionicons name="checkmark" size={10} color={C.white} />
+                      : <View style={lo.stepDotInner} />
+                    }
+                  </View>
+                  <Text style={[lo.stepText, done && lo.stepTextDone]}>{step.label}</Text>
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={lo.badge}>
+            <Ionicons name="shield-checkmark-outline" size={14} color={C.gold} />
+            <Text style={lo.badgeText}>Secured Connection</Text>
+          </View>
+        </LinearGradient>
+      </Animated.View>
+    </Modal>
+  );
+}
+
 const CustomDrawer = ({ navigation, onClose }) => {
   const [profileData, setProfileData] = useState(null);
   const [loading, setLoading]         = useState(true);
   const [statsLoading, setStatsLoading] = useState(false);
   const [userType, setUserType]       = useState('user');
   const [stats, setStats]             = useState({ reports: 0, users: 0 });
+  const [logoutOverlay, setLogoutOverlay] = useState(false);
 
   // ── Menu definitions (mirrors web CustomDrawer) ──────────────
   const userMenuItems = [
@@ -153,11 +230,20 @@ const CustomDrawer = ({ navigation, onClose }) => {
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: async () => {
-        await AsyncStorage.multiRemove(['userToken', 'userData', 'isAuthenticated', 'userId', 'userType']);
-        showToast('success', 'Logged Out', 'You have been successfully logged out');
-        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-      }},
+      {
+        text: 'Logout', style: 'destructive', onPress: () => {
+          if (onClose) onClose();
+          setTimeout(() => {
+            setLogoutOverlay(true);
+            AsyncStorage.multiRemove(['userToken', 'userData', 'isAuthenticated', 'userId', 'userType']).then(() => {
+              setTimeout(() => {
+                setLogoutOverlay(false);
+                navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+              }, 2600);
+            });
+          }, 320);
+        }
+      },
     ]);
   };
 
@@ -198,9 +284,9 @@ const CustomDrawer = ({ navigation, onClose }) => {
       </View>
     );
   }
-
   return (
-    <View style={styles.container}>
+    <>
+      <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Header */}
         <LinearGradient colors={gradientColors} style={styles.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
@@ -317,7 +403,9 @@ const CustomDrawer = ({ navigation, onClose }) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </View>
+    </View>);
+    <LogoutLoadingOverlay visible={logoutOverlay} />
+    </>
   );
 };
 
@@ -361,3 +449,24 @@ const styles = StyleSheet.create({
 });
 
 export default CustomDrawer;
+
+const lo = StyleSheet.create({
+  inner:        { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, paddingVertical: 60 },
+  logoWrap:     { width: 100, height: 100, justifyContent: 'center', alignItems: 'center', marginBottom: 28, position: 'relative' },
+  logoRing:     { position: 'absolute', width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: '#DAA520', borderTopColor: 'transparent' },
+  logo:         { width: 72, height: 72, borderRadius: 16 },
+  title:        { fontSize: 24, fontWeight: '900', color: '#FFFFFF', marginBottom: 6, letterSpacing: 1 },
+  subtitle:     { fontSize: 14, color: 'rgba(255,255,255,0.75)', marginBottom: 32 },
+  barTrack:     { width: '100%', height: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 4, overflow: 'hidden', marginBottom: 8 },
+  barFill:      { height: '100%', backgroundColor: '#DAA520', borderRadius: 4 },
+  pct:          { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 28 },
+  steps:        { width: '100%', gap: 12, marginBottom: 36 },
+  stepRow:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stepDot:      { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)' },
+  stepDotDone:  { backgroundColor: '#DAA520', borderColor: '#DAA520' },
+  stepDotInner: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.4)' },
+  stepText:     { fontSize: 14, color: 'rgba(255,255,255,0.55)', fontWeight: '500' },
+  stepTextDone: { color: '#FFFFFF', fontWeight: '700' },
+  badge:        { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(218,165,32,0.3)' },
+  badgeText:    { fontSize: 12, color: '#DAA520', fontWeight: '600' },
+});

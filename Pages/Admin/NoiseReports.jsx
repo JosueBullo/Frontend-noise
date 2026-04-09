@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
+import { Audio, Video, ResizeMode } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CustomDrawer from '../CustomDrawer';
 import API_BASE_URL from '../../utils/api';
@@ -111,7 +111,17 @@ export default function AdminNoiseReportsScreen({ navigation }) {
     })();
   }, [navigation]);
 
-  useEffect(() => { fetchReports(); return () => { if (sound) sound.unloadAsync(); }; }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    // Set audio mode — play through speaker, allow background
+    Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+    }).catch(() => {});
+    fetchReports();
+    return () => { if (sound) sound.unloadAsync(); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fetch ────────────────────────────────────────────────────
   const fetchReports = async () => {
@@ -241,6 +251,28 @@ export default function AdminNoiseReportsScreen({ navigation }) {
     </View>
   );
 
+  // ── Render inline video player ───────────────────────────────
+  const renderVideoPlayer = (url, playerKey, label, aiData) => (
+    <View key={playerKey} style={s.mediaPlayer}>
+      <View style={s.mediaPlayerHeader}>
+        <View style={s.mediaTypeBadge}>
+          <Ionicons name="videocam-outline" size={14} color={C.saddle} />
+          <Text style={s.mediaTypeText}>{label || 'VIDEO'}</Text>
+        </View>
+        {aiData?.decibel != null && <View style={s.aiChip}><Text style={s.aiChipText}>🔊 {aiData.decibel} dB</Text></View>}
+        {aiData?.is_reportable && <View style={[s.aiChip, { backgroundColor: '#FFF3E0' }]}><Text style={[s.aiChipText, { color: '#E65100' }]}>⚡ Reportable</Text></View>}
+      </View>
+      <Video
+        source={{ uri: url }}
+        style={s.videoPlayer}
+        useNativeControls
+        resizeMode={ResizeMode.CONTAIN}
+        shouldPlay={false}
+        onError={() => Alert.alert('Error', 'Could not load video. The file may be unavailable.')}
+      />
+    </View>
+  );
+
   // ── Render media section (multi-file + single fallback) ──────
   const renderMediaSection = (report) => {
     // Multi-file attachments
@@ -259,20 +291,7 @@ export default function AdminNoiseReportsScreen({ navigation }) {
             const label = att.fileName ? `${idx + 1}. ${att.fileName}` : `File ${idx + 1}`;
             const aiData = report.aiResults && (report.aiResults.find(r => r.fileIndex === idx) || report.aiResults[idx]);
             if (att.type === 'audio') return renderAudioPlayer(att.url, playerKey, label, aiData);
-            if (att.type === 'video') return (
-              <View key={playerKey} style={s.mediaPlayer}>
-                <View style={s.mediaPlayerHeader}>
-                  <View style={s.mediaTypeBadge}>
-                    <Ionicons name="videocam-outline" size={14} color={C.saddle} />
-                    <Text style={s.mediaTypeText}>{label}</Text>
-                  </View>
-                </View>
-                <TouchableOpacity style={s.videoLinkBtn} onPress={() => Alert.alert('Video', att.url, [{ text: 'OK' }])}>
-                  <Ionicons name="play-circle-outline" size={28} color={C.white} />
-                  <Text style={s.videoLinkText}>Tap to view video</Text>
-                </TouchableOpacity>
-              </View>
-            );
+            if (att.type === 'video') return renderVideoPlayer(att.url, playerKey, label, aiData);
             return null;
           })}
         </View>
@@ -295,10 +314,7 @@ export default function AdminNoiseReportsScreen({ navigation }) {
           <Ionicons name="videocam-outline" size={16} color={C.saddle} />
           <Text style={s.mediaSectionTitle}>Video Recording</Text>
         </View>
-        <TouchableOpacity style={s.videoLinkBtn} onPress={() => Alert.alert('Video URL', report.mediaUrl, [{ text: 'OK' }])}>
-          <Ionicons name="play-circle-outline" size={28} color={C.white} />
-          <Text style={s.videoLinkText}>Tap to view video</Text>
-        </TouchableOpacity>
+        {renderVideoPlayer(report.mediaUrl, report._id, 'VIDEO', null)}
       </View>
     );
     return null;
@@ -726,8 +742,7 @@ const s = StyleSheet.create({
   audioProgressFill:  { height: '100%', backgroundColor: C.saddle, borderRadius: 2 },
   audioTimeRow:       { flexDirection: 'row', justifyContent: 'space-between' },
   audioTime:          { fontSize: 10, color: '#999' },
-  // video link button
-  videoLinkBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: C.saddle, paddingVertical: 12, borderRadius: 10 },
-  videoLinkText:      { color: C.white, fontWeight: '700', fontSize: 14 },
+  // video player
+  videoPlayer:        { width: '100%', height: 220, backgroundColor: '#000', borderRadius: 10, overflow: 'hidden' },
   timestamp:          { fontSize: 11, color: '#999', textAlign: 'center', marginTop: 6 },
 });
