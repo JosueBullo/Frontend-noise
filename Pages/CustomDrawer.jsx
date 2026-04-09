@@ -227,22 +227,21 @@ const CustomDrawer = ({ navigation, onClose }) => {
   };
 
   // ── Logout ────────────────────────────────────────────────────
-  const handleLogout = () => {
+const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Logout', style: 'destructive', onPress: () => {
-          if (onClose) onClose();
+          // Show overlay immediately (before closing drawer)
+          setLogoutOverlay(true);
+          // Clear storage in background
+          AsyncStorage.multiRemove(['userToken', 'userData', 'isAuthenticated', 'userId', 'userType']);
+          // Navigate after animation completes (~2.6s)
           setTimeout(() => {
-            setLogoutOverlay(true);
-            AsyncStorage.multiRemove(['userToken', 'userData', 'isAuthenticated', 'userId', 'userType']).then(() => {
-              setTimeout(() => {
-                setLogoutOverlay(false);
-                navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-              }, 2600);
-            });
-          }, 320);
-        }
+            setLogoutOverlay(false);
+            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+          }, 2600);
+        },
       },
     ]);
   };
@@ -403,7 +402,7 @@ const CustomDrawer = ({ navigation, onClose }) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </View>);
+    </View>
     <LogoutLoadingOverlay visible={logoutOverlay} />
     </>
   );
