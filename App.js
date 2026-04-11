@@ -20,6 +20,9 @@ import UserProfile from './Pages/UserProfile';
 import MapScreen from './Pages/User/Map';
 import AudioRecordingScreen from './Pages/User/Report';
 import UserReportsScreen from './Pages/User/ReportHistory';
+import NoiseHealthExposure from './Pages/User/NoiseHealthExposure';
+import CommunityForum from './Pages/CommunityForum';
+import ForumModerationAdmin from './Pages/Admin/ForumModeration';
 
 const Stack = createStackNavigator();
 
@@ -108,6 +111,24 @@ export default function App() {
               headerShown: false,
               gestureEnabled: true,
             }}
+          />
+
+          <Stack.Screen
+            name="NoiseHealthExposure"
+            component={NoiseHealthExposure}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
+
+          <Stack.Screen
+            name="CommunityForum"
+            component={CommunityForum}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
+
+          <Stack.Screen
+            name="ForumModerationAdmin"
+            component={ForumModerationAdmin}
+            options={{ headerShown: false, gestureEnabled: true }}
           />
           
           {/* Admin Screens */}

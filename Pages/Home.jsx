@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, Animated,
   StatusBar, Dimensions, Platform, Easing, ScrollView,
-  RefreshControl, ActivityIndicator,
+  RefreshControl, ActivityIndicator, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CustomDrawer from './CustomDrawer';
+import DecibelAI from './DecibelAI';
 import API_BASE_URL from '../utils/api';
 
 const { width, height } = Dimensions.get('window');
@@ -80,10 +81,12 @@ function FadeIn({ delay = 0, children }) {
 
 export default function Home({ navigation }) {
   const [drawerVisible, setDrawerVisible] = useState(false);
+  const [chatVisible, setChatVisible]     = useState(false);
   const slideAnim   = useRef(new Animated.Value(-width * 0.82)).current;
   const overlayAnim = useRef(new Animated.Value(0)).current;
 
   const [userName, setUserName]       = useState('');
+  const [userType, setUserType]       = useState('user');
   const [totalUsers, setTotalUsers]   = useState(0);
   const [totalReports, setTotalReports] = useState(0);
   const [recentReports, setRecentReports] = useState([]);
@@ -115,17 +118,27 @@ export default function Home({ navigation }) {
 
       const token = await AsyncStorage.getItem('userToken');
       const stored = await AsyncStorage.getItem('userData');
+      let userId = null;
+
       if (stored) {
         const u = JSON.parse(stored);
         setUserName(u.username || u.name || 'User');
+        setUserType(u.userType || u.role || 'user');
+        userId = u._id || u.id;
       }
+
+      // fallback: get userId from separate key
+      if (!userId) userId = await AsyncStorage.getItem('userId');
 
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-      const [usersRes, reportsCountRes, reportsRes, hotspotsRes] = await Promise.allSettled([
+      const [usersRes, reportsCountRes, myReportsRes, hotspotsRes] = await Promise.allSettled([
         fetch(`${API_BASE_URL}/user/countUsersOnly`, { headers }),
         fetch(`${API_BASE_URL}/reports/total-reports`, { headers }),
-        fetch(`${API_BASE_URL}/reports/get-report`, { headers }),
+        // ← only fetch THIS user's reports
+        userId
+          ? fetch(`${API_BASE_URL}/reports/get-user-report/${userId}`, { headers })
+          : Promise.resolve({ ok: false }),
         fetch(`${API_BASE_URL}/analytics/top-locations?period=weekly&limit=5`, { headers }),
       ]);
 
@@ -137,10 +150,11 @@ export default function Home({ navigation }) {
         const d = await reportsCountRes.value.json();
         setTotalReports(d.totalReports || 0);
       }
-      if (reportsRes.status === 'fulfilled' && reportsRes.value.ok) {
-        const data = await reportsRes.value.json();
-        // Take the 5 most recent
-        setRecentReports((data || []).slice(0, 5));
+      if (myReportsRes.status === 'fulfilled' && myReportsRes.value.ok) {
+        const data = await myReportsRes.value.json();
+        // get-user-report returns { reports: [...] }
+        const list = data.reports || data || [];
+        setRecentReports(list.slice(0, 5));
       }
       if (hotspotsRes.status === 'fulfilled' && hotspotsRes.value.ok) {
         const d = await hotspotsRes.value.json();
@@ -201,23 +215,25 @@ export default function Home({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Stats row in header */}
-          <View style={s.headerStats}>
-            <View style={s.headerStat}>
-              <Text style={s.headerStatNum}>{totalUsers.toLocaleString()}</Text>
-              <Text style={s.headerStatLabel}>Active Users</Text>
+          {/* Stats row — admin only */}
+          {['admin', 'administrator'].includes(userType?.toLowerCase()) && (
+            <View style={s.headerStats}>
+              <View style={s.headerStat}>
+                <Text style={s.headerStatNum}>{totalUsers.toLocaleString()}</Text>
+                <Text style={s.headerStatLabel}>Active Users</Text>
+              </View>
+              <View style={s.headerStatDivider} />
+              <View style={s.headerStat}>
+                <Text style={s.headerStatNum}>{totalReports.toLocaleString()}</Text>
+                <Text style={s.headerStatLabel}>Total Reports</Text>
+              </View>
+              <View style={s.headerStatDivider} />
+              <View style={s.headerStat}>
+                <Text style={s.headerStatNum}>{recentReports.length}</Text>
+                <Text style={s.headerStatLabel}>Recent</Text>
+              </View>
             </View>
-            <View style={s.headerStatDivider} />
-            <View style={s.headerStat}>
-              <Text style={s.headerStatNum}>{totalReports.toLocaleString()}</Text>
-              <Text style={s.headerStatLabel}>Total Reports</Text>
-            </View>
-            <View style={s.headerStatDivider} />
-            <View style={s.headerStat}>
-              <Text style={s.headerStatNum}>{recentReports.length}</Text>
-              <Text style={s.headerStatLabel}>Recent</Text>
-            </View>
-          </View>
+          )}
         </View>
       </LinearGradient>
 
@@ -251,11 +267,12 @@ export default function Home({ navigation }) {
           </View>
         </FadeIn>
 
-        {/* ── Recent Reports ── */}
+        {/* ── Recent Reports — user only ── */}
+        {!['admin', 'administrator'].includes(userType?.toLowerCase()) && (
         <FadeIn delay={80}>
           <View style={s.section}>
             <View style={s.sectionHeader}>
-              <Text style={s.sectionTitle}>Recent Reports</Text>
+              <Text style={s.sectionTitle}>My Recent Reports</Text>
               <TouchableOpacity onPress={() => navigation.navigate('ReportHistory')}>
                 <Text style={s.seeAll}>See all</Text>
               </TouchableOpacity>
@@ -265,7 +282,7 @@ export default function Home({ navigation }) {
               <View style={s.emptyCard}>
                 <Ionicons name="document-text-outline" size={40} color="#CCC" />
                 <Text style={s.emptyText}>No reports yet</Text>
-                <Text style={s.emptySub}>Be the first to report a noise disturbance</Text>
+                <Text style={s.emptySub}>Start recording to submit your first noise report</Text>
               </View>
             ) : (
               recentReports.map((r, i) => {
@@ -279,7 +296,14 @@ export default function Home({ navigation }) {
                     </View>
                     <View style={s.reportInfo}>
                       <Text style={s.reportLabel} numberOfLines={1}>{label}</Text>
-                      {loc && <Text style={s.reportLoc} numberOfLines={1}><Ionicons name="location-outline" size={11} color={C.muted} /> {loc}</Text>}
+                      {loc && (
+                        <Text style={s.reportLoc} numberOfLines={1}>
+                          <Ionicons name="location-outline" size={11} color={C.muted} /> {loc}
+                        </Text>
+                      )}
+                      {r.comment ? (
+                        <Text style={s.reportComment} numberOfLines={1}>{r.comment}</Text>
+                      ) : null}
                       <Text style={s.reportTime}>{formatTimeAgo(r.createdAt)}</Text>
                     </View>
                     <View style={s.reportRight}>
@@ -297,6 +321,7 @@ export default function Home({ navigation }) {
             )}
           </View>
         </FadeIn>
+        )}
 
         {/* ── Noise Hotspots ── */}
         <FadeIn delay={160}>
@@ -399,6 +424,23 @@ export default function Home({ navigation }) {
           </Animated.View>
         </View>
       </Modal>
+
+      {/* ── Decibel AI Floating Button ── */}
+      <TouchableOpacity style={s.fabChat} onPress={() => setChatVisible(true)} activeOpacity={0.85}>
+        <LinearGradient colors={[C.gold, '#B8860B']} style={s.fabChatInner}>
+          <Image
+            source={require('../assets/AI.png')}
+            style={s.fabChatImg}
+            resizeMode="contain"
+          />
+        </LinearGradient>
+        <View style={s.fabChatBadge}>
+          <Text style={s.fabChatBadgeText}>AI</Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* ── Decibel AI Chat Modal ── */}
+      <DecibelAI visible={chatVisible} onClose={() => setChatVisible(false)} />
     </View>
   );
 }
@@ -442,6 +484,7 @@ const s = StyleSheet.create({
   reportInfo:     { flex: 1 },
   reportLabel:    { fontSize: 14, fontWeight: '700', color: C.dark, marginBottom: 3 },
   reportLoc:      { fontSize: 11, color: C.muted, marginBottom: 2 },
+  reportComment:  { fontSize: 11, color: C.sub, marginBottom: 2, fontStyle: 'italic' },
   reportTime:     { fontSize: 11, color: C.muted },
   reportRight:    { alignItems: 'flex-end', gap: 4 },
   levelBadge:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, gap: 4 },
@@ -486,4 +529,11 @@ const s = StyleSheet.create({
 
   // Drawer
   drawerWrap:     { width: width * 0.82, position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: C.white, elevation: 5 },
+
+  // Decibel AI FAB
+  fabChat:        { position: 'absolute', bottom: 28, right: 20, alignItems: 'center', justifyContent: 'center' },
+  fabChatInner:   { width: 58, height: 58, borderRadius: 29, justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: C.dark, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 6 },
+  fabChatImg:     { width: 38, height: 38, borderRadius: 19 },
+  fabChatBadge:   { position: 'absolute', top: 0, right: 0, backgroundColor: C.saddle, borderRadius: 8, paddingHorizontal: 4, paddingVertical: 1, borderWidth: 1.5, borderColor: C.white },
+  fabChatBadgeText: { fontSize: 8, fontWeight: '900', color: C.white },
 });

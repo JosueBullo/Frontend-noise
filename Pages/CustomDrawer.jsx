@@ -103,21 +103,24 @@ const CustomDrawer = ({ navigation, onClose }) => {
 
   // ── Menu definitions (mirrors web CustomDrawer) ──────────────
   const userMenuItems = [
-    { id: '1', title: 'Dashboard',           icon: 'home-outline',          route: 'Home'            },
-    { id: '2', title: 'Noise Map',           icon: 'map-outline',           route: 'MapScreen'       },
-    { id: '3', title: 'Report Noise',        icon: 'megaphone-outline',     route: 'Record'          },
-    { id: '4', title: 'My History',          icon: 'time-outline',          route: 'ReportHistory'   },
-    { id: '5', title: 'Notifications',       icon: 'notifications-outline', route: 'Notifications'   },
-    { id: '6', title: 'Analytics (Personal)',icon: 'analytics-outline',     route: 'PersonalAnalytics'},
+    { id: '1', title: 'Dashboard',           icon: 'home-outline',          route: 'Home'                },
+    { id: '2', title: 'Noise Map',           icon: 'map-outline',           route: 'MapScreen'           },
+    { id: '3', title: 'Report Noise',        icon: 'megaphone-outline',     route: 'Record'              },
+    { id: '4', title: 'My History',          icon: 'time-outline',          route: 'ReportHistory'       },
+    { id: '5', title: 'Community Forum',     icon: 'people-outline',        route: 'CommunityForum'      },
+    { id: '6', title: 'Notifications',       icon: 'notifications-outline', route: 'Notifications'       },
+    { id: '7', title: 'Analytics (Personal)',icon: 'analytics-outline',     route: 'PersonalAnalytics'   },
+    { id: '8', title: 'Health Exposure',     icon: 'fitness-outline',       route: 'NoiseHealthExposure' },
   ];
 
   const adminMenuItems = [
-    { id: '1', title: 'Dashboard',             icon: 'speedometer-outline',   route: 'AdminDashboard'    },
-    { id: '2', title: 'Noise Reports',         icon: 'document-text-outline', route: 'NoiseReports'      },
-    { id: '3', title: 'Graphs & Analytics',    icon: 'bar-chart-outline',     route: 'Analytics'         },
-    { id: '4', title: 'Users & Contributors',  icon: 'people-outline',        route: 'UserManagement'    },
-    { id: '5', title: 'Export Reports',        icon: 'download-outline',      route: 'ExportReports'     },
-    { id: '6', title: 'Notifications & Alerts',icon: 'alert-circle-outline',  route: 'AdminNotifications'},
+    { id: '1', title: 'Dashboard',             icon: 'speedometer-outline',   route: 'AdminDashboard'      },
+    { id: '2', title: 'Noise Reports',         icon: 'document-text-outline', route: 'NoiseReports'        },
+    { id: '3', title: 'Graphs & Analytics',    icon: 'bar-chart-outline',     route: 'Analytics'           },
+    { id: '4', title: 'Users & Contributors',  icon: 'people-outline',        route: 'UserManagement'      },
+    { id: '5', title: 'Export Reports',        icon: 'download-outline',      route: 'ExportReports'       },
+    { id: '6', title: 'Notifications & Alerts',icon: 'alert-circle-outline',  route: 'AdminNotifications'  },
+    { id: '7', title: 'Forum Moderation',      icon: 'shield-checkmark-outline', route: 'ForumModerationAdmin' },
   ];
 
   const userBottomItems  = [{ id: '7', title: 'Heatmaps', icon: 'map-outline', route: 'MapScreen' }];
@@ -212,7 +215,8 @@ const CustomDrawer = ({ navigation, onClose }) => {
     'Home', 'MapScreen', 'UserProfile', 'AdminDashboard', 'UserManagement',
     'Record', 'NoiseReports', 'ReportHistory', 'Analytics',
     'ExportReports', 'AdminNotifications', 'AdminProfile',
-    'Notifications', 'PersonalAnalytics',
+    'Notifications', 'PersonalAnalytics', 'NoiseHealthExposure',
+    'CommunityForum', 'ForumModerationAdmin',
   ];
 
   const handleNavigation = (route) => {
