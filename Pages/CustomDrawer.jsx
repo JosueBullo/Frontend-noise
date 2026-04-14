@@ -1,15 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  ScrollView,
-  SafeAreaView,
-  Dimensions,
-  Alert,
-  ActivityIndicator
+  View, Text, StyleSheet, TouchableOpacity, Image,
+  ScrollView, Dimensions, Alert, ActivityIndicator, Modal, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,140 +10,263 @@ import axios from 'axios';
 import { showToast } from '../utils/toast';
 import API_BASE_URL from '../utils/api';
 
-const { height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
+
+const C = {
+  dark: '#3E2C23', mid: '#5D4A36', saddle: '#8B4513', gold: '#DAA520',
+  cream: '#FDF5E6', white: '#FFFFFF', red: '#E74C3C', sub: '#8B7355',
+};
+
+// ── Logout loading overlay ───────────────────────────────────────────────────
+const LOGOUT_STEPS = [
+  { label: 'Clearing session',      threshold: 30 },
+  { label: 'Removing credentials',  threshold: 65 },
+  { label: 'Redirecting',           threshold: 90 },
+];
+
+function LogoutLoadingOverlay({ visible }) {
+  const logoSpin = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [pct, setPct] = useState(0);
+
+  useEffect(() => {
+    if (!visible) { fadeAnim.setValue(0); logoSpin.setValue(0); setPct(0); return; }
+
+    Animated.timing(fadeAnim, { toValue: 1, duration: 280, useNativeDriver: true }).start();
+    Animated.loop(
+      Animated.timing(logoSpin, { toValue: 1, duration: 1100, useNativeDriver: true })
+    ).start();
+
+    let current = 0;
+    const interval = setInterval(() => {
+      current += current < 30 ? 3.5 : current < 65 ? 2.5 : current < 90 ? 1.5 : 0.8;
+      if (current >= 100) { current = 100; clearInterval(interval); }
+      setPct(current);
+    }, 60);
+    return () => clearInterval(interval);
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const spin = logoSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const roundPct = Math.min(Math.round(pct), 100);
+
+  return (
+    <Modal visible={visible} transparent animationType="none">
+      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+        <LinearGradient colors={[C.dark, C.saddle]} style={lo.inner}>
+          <View style={lo.logoWrap}>
+            <Animated.View style={[lo.logoRing, { transform: [{ rotate: spin }] }]} />
+            <Image source={require('../assets/logo.png')} style={lo.logo} resizeMode="contain" />
+          </View>
+
+          <Text style={lo.title}>Signing Out</Text>
+          <Text style={lo.subtitle}>Please wait...</Text>
+
+          <View style={lo.barTrack}>
+            <View style={[lo.barFill, { width: `${roundPct}%` }]} />
+          </View>
+          <Text style={lo.pct}>{roundPct}% complete</Text>
+
+          <View style={lo.steps}>
+            {LOGOUT_STEPS.map((step, i) => {
+              const done = roundPct >= step.threshold;
+              return (
+                <View key={i} style={lo.stepRow}>
+                  <View style={[lo.stepDot, done && lo.stepDotDone]}>
+                    {done
+                      ? <Ionicons name="checkmark" size={10} color={C.white} />
+                      : <View style={lo.stepDotInner} />
+                    }
+                  </View>
+                  <Text style={[lo.stepText, done && lo.stepTextDone]}>{step.label}</Text>
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={lo.badge}>
+            <Ionicons name="shield-checkmark-outline" size={14} color={C.gold} />
+            <Text style={lo.badgeText}>Secured Connection</Text>
+          </View>
+        </LinearGradient>
+      </Animated.View>
+    </Modal>
+  );
+}
 
 const CustomDrawer = ({ navigation, onClose }) => {
   const [profileData, setProfileData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [userType, setUserType] = useState('user'); // Default to regular user
+  const [loading, setLoading]         = useState(true);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [userType, setUserType]       = useState('user');
+  const [stats, setStats]             = useState({ reports: 0, users: 0 });
+  const [logoutOverlay, setLogoutOverlay] = useState(false);
 
-  // Regular user menu items for noise monitoring
+  // ── Menu definitions (mirrors web CustomDrawer) ──────────────
   const userMenuItems = [
-    { id: '1', title: 'Dashboard', icon: 'home-outline', route: 'Home' },
-    { id: '2', title: 'Noise Map', icon: 'map-outline', route: 'MapScreen' },
-    { id: '3', title: 'Report Noise', icon: 'megaphone-outline', route: 'Record' },
-    { id: '4', title: 'My History', icon: 'time-outline', route: 'ReportHistory' },
-    { id: '5', title: 'Notifications', icon: 'notifications-outline', route: 'Notifications' },
-    { id: '6', title: 'Analytics (Personal)', icon: 'analytics-outline', route: 'PersonalAnalytics' },
+    { id: '1', title: 'Dashboard',           icon: 'home-outline',          route: 'Home'                },
+    { id: '2', title: 'Noise Map',           icon: 'map-outline',           route: 'MapScreen'           },
+    { id: '3', title: 'Report Noise',        icon: 'megaphone-outline',     route: 'Record'              },
+    { id: '4', title: 'My History',          icon: 'time-outline',          route: 'ReportHistory'       },
+    { id: '5', title: 'Community Forum',     icon: 'people-outline',        route: 'CommunityForum'      },
+    { id: '6', title: 'Notifications',       icon: 'notifications-outline', route: 'Notifications'       },
+    { id: '7', title: 'Analytics (Personal)',icon: 'analytics-outline',     route: 'PersonalAnalytics'   },
+    { id: '8', title: 'Health Exposure',     icon: 'fitness-outline',       route: 'NoiseHealthExposure' },
   ];
 
-  // Admin menu items for noise monitoring
   const adminMenuItems = [
-    { id: '1', title: 'Dashboard', icon: 'speedometer-outline', route: 'AdminDashboard' },
-    { id: '2', title: 'Noise Reports', icon: 'document-text-outline', route: 'NoiseReports' },
-    { id: '3', title: 'Heatmap & Analytics', icon: 'bar-chart-outline', route: 'HeatmapAnalytics' },
-    { id: '4', title: 'Users & Contributors', icon: 'people-outline', route: 'UserManagement' },
-    { id: '5', title: 'Export Reports', icon: 'download-outline', route: 'ExportReports' },
-    { id: '6', title: 'Notifications & Alerts', icon: 'alert-circle-outline', route: 'AdminNotifications' },
+    { id: '1', title: 'Dashboard',             icon: 'speedometer-outline',   route: 'AdminDashboard'      },
+    { id: '2', title: 'Noise Reports',         icon: 'document-text-outline', route: 'NoiseReports'        },
+    { id: '3', title: 'Graphs & Analytics',    icon: 'bar-chart-outline',     route: 'Analytics'           },
+    { id: '4', title: 'Users & Contributors',  icon: 'people-outline',        route: 'UserManagement'      },
+    { id: '5', title: 'Export Reports',        icon: 'download-outline',      route: 'ExportReports'       },
+    { id: '6', title: 'Notifications & Alerts',icon: 'alert-circle-outline',  route: 'AdminNotifications'  },
+    { id: '7', title: 'Forum Moderation',      icon: 'shield-checkmark-outline', route: 'ForumModerationAdmin' },
   ];
 
-  const bottomItems = [
-    { id: '7', title: 'Settings', icon: 'settings-outline', route: 'Settings' },
-    { id: '8', title: 'Help & About', icon: 'help-circle-outline', route: 'HelpAbout' },
-  ];
-
-  // Admin bottom items
+  const userBottomItems  = [{ id: '7', title: 'Heatmaps', icon: 'map-outline', route: 'MapScreen' }];
   const adminBottomItems = [
-    { id: '7', title: 'Settings', icon: 'settings-outline', route: 'AdminSettings' },
-    { id: '8', title: 'Help & Documentation', icon: 'library-outline', route: 'AdminHelp' },
+    { id: '7', title: 'Profile & Settings', icon: 'person-circle-outline', route: 'AdminProfile' },
+    { id: '8', title: 'Heatmaps',           icon: 'map-outline',           route: 'MapScreen'    },
   ];
 
+  // ── Fetch profile ─────────────────────────────────────────────
   const fetchProfile = async () => {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('userToken');
-      if (!token) throw new Error('No authentication token found');
+      if (!token) throw new Error('No token');
 
-      const response = await axios.get(`${API_BASE_URL}/user/profile`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.data.success) {
-        throw new Error(response.data.message || 'Profile fetch failed');
+      // Try stored data first for speed
+      const stored = await AsyncStorage.getItem('userData');
+      if (stored) {
+        const u = JSON.parse(stored);
+        setProfileData(u);
+        setUserType(u.userType || u.role || 'user');
       }
 
-      setProfileData(response.data.user);
-      
-      // Set user type based on profile data
-      setUserType(response.data.user.userType || response.data.user.role || 'user');
-      
-    } catch (error) {
-      console.error('Profile fetch error:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to load profile';
-      showToast('error', 'Profile Error', errorMessage);
+      const res = await axios.get(`${API_BASE_URL}/user/profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.data.success) {
+        const u = res.data.user;
+        setProfileData(u);
+        setUserType(u.userType || u.role || 'user');
+        await AsyncStorage.setItem('userData', JSON.stringify(u));
+        await AsyncStorage.setItem('userType', u.userType || 'user');
+      }
+    } catch (e) {
+      const stored = await AsyncStorage.getItem('userData');
+      if (stored) {
+        const u = JSON.parse(stored);
+        setProfileData(u);
+        setUserType(u.userType || 'user');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // ── Fetch admin stats ─────────────────────────────────────────
+  const fetchAdminStats = async () => {
+    try {
+      setStatsLoading(true);
+      const token = await AsyncStorage.getItem('userToken');
+      const h = { Authorization: `Bearer ${token}` };
+      const [rRes, uRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/reports/total-reports`, { headers: h }),
+        fetch(`${API_BASE_URL}/user/getAll`, { headers: h }),
+      ]);
+      let reports = 0, users = 0;
+      if (rRes.ok) { const d = await rRes.json(); reports = d.totalReports || 0; }
+      if (uRes.ok) { const d = await uRes.json(); users = d.users?.length || 0; }
+      setStats({ reports, users });
+    } catch (e) { /* non-critical */ }
+    finally { setStatsLoading(false); }
+  };
+
+  // ── Fetch user stats ──────────────────────────────────────────
+  const fetchUserStats = async () => {
+    try {
+      setStatsLoading(true);
+      const token = await AsyncStorage.getItem('userToken');
+      const userId = profileData?.id || profileData?._id;
+      if (!userId) return;
+      const res = await fetch(`${API_BASE_URL}/reports/get-user-report/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setStats({ reports: d.count || d.reports?.length || 0, users: 0 });
+      }
+    } catch (e) { /* non-critical */ }
+    finally { setStatsLoading(false); }
+  };
+
+  useEffect(() => { fetchProfile(); }, []);
+
   useEffect(() => {
-    fetchProfile();
-  }, []);
+    if (!profileData) return;
+    const isAdmin = ['admin', 'administrator'].includes(userType.toLowerCase());
+    if (isAdmin) fetchAdminStats(); else fetchUserStats();
+  }, [profileData, userType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Navigation ────────────────────────────────────────────────
+  const validRoutes = [
+    'Home', 'MapScreen', 'UserProfile', 'AdminDashboard', 'UserManagement',
+    'Record', 'NoiseReports', 'ReportHistory', 'Analytics',
+    'ExportReports', 'AdminNotifications', 'AdminProfile',
+    'Notifications', 'PersonalAnalytics', 'NoiseHealthExposure',
+    'CommunityForum', 'ForumModerationAdmin',
+  ];
 
   const handleNavigation = (route) => {
-    // Close drawer first
-    if (onClose) {
-      onClose();
-    }
-    
-    // Small delay to ensure drawer closes before navigation
+    if (onClose) onClose();
     setTimeout(() => {
-      try {
-        // Check if the route exists in your navigation stack
-        const validRoutes = ['Home', 'MapScreen', 'UserProfile', 'AdminDashboard', 'UserManagement', 'Record', 'NoiseReports', 'ReportHistory'];
-        
-        if (validRoutes.includes(route)) {
-          navigation.navigate(route);
-        } else {
-          // For routes that don't exist yet, show a toast
-          showToast('info', 'Coming Soon', `${route} feature is under development`);
-        }
-      } catch (error) {
-        console.error('Navigation error:', error);
-        showToast('error', 'Navigation Error', 'Unable to navigate to the selected screen');
+      if (validRoutes.includes(route)) {
+        navigation.navigate(route);
+      } else {
+        showToast('info', 'Coming Soon', `${route} is under development`);
       }
-    }, 300);
+    }, 280);
   };
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
+  // ── Logout ────────────────────────────────────────────────────
+const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout', style: 'destructive', onPress: () => {
+          // Show overlay immediately (before closing drawer)
+          setLogoutOverlay(true);
+          // Clear storage in background
+          AsyncStorage.multiRemove(['userToken', 'userData', 'isAuthenticated', 'userId', 'userType']);
+          // Navigate after animation completes (~2.6s)
+          setTimeout(() => {
+            setLogoutOverlay(false);
+            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+          }, 2600);
         },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: performLogout,
-        },
-      ],
-      { cancelable: true }
-    );
+      },
+    ]);
   };
 
-  const performLogout = async () => {
-    try {
-      // Clear all login-related data locally
-      await AsyncStorage.multiRemove(['userToken', 'userData', 'isAuthenticated']);
+  // ── Derived values ────────────────────────────────────────────
+  const isAdmin = ['admin', 'administrator'].includes(userType.toLowerCase());
+  const menuItems   = isAdmin ? adminMenuItems   : userMenuItems;
+  const bottomItems = isAdmin ? adminBottomItems : userBottomItems;
+  const gradientColors = isAdmin
+    ? ['#8B4513', '#654321', '#4A2C17']
+    : ['#D4AC0D', '#B7950B', '#8B4513'];
+  const displayStats = isAdmin
+    ? [
+        { number: stats.reports.toLocaleString(), label: 'Reports', icon: 'document-text-outline' },
+        { number: stats.users.toLocaleString(),   label: 'Users',   icon: 'people-outline'        },
+      ]
+    : [{ number: stats.reports.toString(), label: 'My Reports', icon: 'document-text-outline' }];
 
-      showToast('success', 'Logged Out', 'You have been successfully logged out');
+  const user = profileData || { username: 'User', email: 'user@example.com', profilePhoto: null };
 
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Login' }],
-      });
-    } catch (error) {
-      console.error('Logout error:', error);
-      showToast('error', 'Logout Failed', 'Something went wrong. Please try again.');
-    }
-  };
-
+  // ── Render menu item ──────────────────────────────────────────
   const renderMenuItem = (item, isBottom = false) => (
     <TouchableOpacity
       key={item.id}
@@ -159,481 +274,202 @@ const CustomDrawer = ({ navigation, onClose }) => {
       onPress={() => handleNavigation(item.route)}
       activeOpacity={0.7}
     >
-      <Ionicons name={item.icon} size={24} color="#8B4513" />
+      <Ionicons name={item.icon} size={22} color={C.saddle} />
       <Text style={styles.menuText}>{item.title}</Text>
-      <Ionicons name="chevron-forward" size={20} color="#D4AC0D" />
+      <Ionicons name="chevron-forward" size={18} color={C.gold} />
     </TouchableOpacity>
   );
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#8B4513" />
-      </SafeAreaView>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={C.saddle} />
+      </View>
     );
   }
-
-  const user = profileData || {
-    name: 'User',
-    email: 'user@example.com',
-    profilePhoto: null,
-    address: null
-  };
-
-  // Determine which menu items to show based on user type
-  const getMenuItems = () => {
-    switch(userType.toLowerCase()) {
-      case 'admin':
-      case 'administrator':
-        return adminMenuItems;
-      default:
-        return userMenuItems;
-    }
-  };
-
-  const getBottomItems = () => {
-    switch(userType.toLowerCase()) {
-      case 'admin':
-      case 'administrator':
-        return adminBottomItems;
-      default:
-        return bottomItems;
-    }
-  };
-
-  const getSectionTitle = () => {
-    switch(userType.toLowerCase()) {
-      case 'admin':
-      case 'administrator':
-        return 'Admin Panel';
-      default:
-        return 'Noise Monitoring';
-    }
-  };
-
-  const getGradientColors = () => {
-    switch(userType.toLowerCase()) {
-      case 'admin':
-      case 'administrator':
-        return ['#8B4513', '#654321', '#4A2C17']; // Darker brown gradient for admin
-      default:
-        return ['#D4AC0D', '#B7950B', '#8B4513']; // Mustard to brown gradient for users
-    }
-  };
-
-  const getStats = () => {
-    switch(userType.toLowerCase()) {
-      case 'admin':
-      case 'administrator':
-        return [
-          { number: '1,247', label: 'Reports' },
-          { number: '89', label: 'Users' },
-          { number: '23', label: 'Hotspots' }
-        ];
-      default:
-        return [
-          { number: '42', label: 'Reports' },
-          { number: '158', label: 'Hours' },
-          { number: '73', label: 'dB Avg' }
-        ];
-    }
-  };
-
-  const currentMenuItems = getMenuItems();
-  const currentBottomItems = getBottomItems();
-  const sectionTitle = getSectionTitle();
-  const gradientColors = getGradientColors();
-  const stats = getStats();
-
   return (
-    <SafeAreaView style={styles.container}>
+    <>
+      <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header Section */}
-        <LinearGradient
-          colors={gradientColors}
-          style={styles.header}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={onClose}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="close" size={28} color="#FFF8DC" />
+        {/* Header */}
+        <LinearGradient colors={gradientColors} style={styles.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+          <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.7}>
+            <Ionicons name="close" size={26} color={C.cream} />
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          {/* Logo + title */}
+          <View style={styles.logoRow}>
+            <Image source={require('../assets/logo.png')} style={styles.logoImg} resizeMode="contain" />
+            <Text style={styles.logoTitle}>NOISEWATCH</Text>
+          </View>
+
+          {/* Profile */}
+          <TouchableOpacity
             style={styles.profileSection}
-            onPress={() => handleNavigation('UserProfile')}
-            activeOpacity={0.7}
+            onPress={() => handleNavigation(isAdmin ? 'AdminProfile' : 'UserProfile')}
+            activeOpacity={0.8}
           >
-            <Image
-              source={user.profilePhoto 
-                ? { uri: user.profilePhoto } 
-                : require('../assets/default-profile.png')}
-              style={styles.profileImage}
-            />
+            {user.profilePhoto ? (
+              <Image source={{ uri: user.profilePhoto }} style={styles.profileImage} />
+            ) : (
+              <View style={styles.profileInitials}>
+                <Text style={styles.profileInitialsText}>
+                  {(user.username || 'U').charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
             <View style={styles.profileInfo}>
               <Text style={styles.profileName}>{user.username}</Text>
-              <Text style={styles.profileEmail}>{user.email}</Text>
-              {(userType.toLowerCase() === 'admin' || userType.toLowerCase() === 'administrator') && (
+              <Text style={styles.profileEmail} numberOfLines={1}>{user.email}</Text>
+              {isAdmin && (
                 <View style={styles.adminBadge}>
                   <Text style={styles.adminBadgeText}>System Administrator</Text>
                 </View>
               )}
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#FFF8DC" style={styles.profileChevron} />
+            <Ionicons name="chevron-forward" size={18} color={C.cream} />
           </TouchableOpacity>
 
-          {/* Stats Container */}
+          {/* Stats */}
           <View style={styles.statsContainer}>
-            {stats.map((stat, index) => (
-              <React.Fragment key={index}>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{stat.number}</Text>
-                  <Text style={styles.statLabel}>{stat.label}</Text>
-                </View>
-                {index < stats.length - 1 && <View style={styles.statDivider} />}
-              </React.Fragment>
-            ))}
+            {statsLoading ? (
+              <ActivityIndicator size="small" color={C.cream} />
+            ) : (
+              displayStats.map((s, i) => (
+                <React.Fragment key={i}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>{s.number}</Text>
+                    <Text style={styles.statLabel}>{s.label}</Text>
+                  </View>
+                  {i < displayStats.length - 1 && <View style={styles.statDivider} />}
+                </React.Fragment>
+              ))
+            )}
           </View>
         </LinearGradient>
 
-        {/* Menu Items */}
+        {/* Menu */}
         <View style={styles.menuContainer}>
-          <View style={styles.menuSection}>
-            <Text style={styles.sectionTitle}>{sectionTitle}</Text>
-            {currentMenuItems.map(item => renderMenuItem(item))}
-          </View>
+          <Text style={styles.sectionTitle}>{isAdmin ? 'Admin Panel' : 'Noise Monitoring'}</Text>
+          {menuItems.map(item => renderMenuItem(item))}
 
-          {/* Quick Actions for Users */}
-          {userType.toLowerCase() === 'user' && (
-            <View style={styles.quickActionsContainer}>
-              <Text style={styles.quickActionsTitle}>Quick Actions</Text>
-              <View style={styles.quickActionsGrid}>
-                <TouchableOpacity 
-                  style={styles.quickActionButton}
-                  onPress={() => handleNavigation('QuickRecord')}
-                >
-                  <Ionicons name="mic-circle" size={32} color="#8B4513" />
-                  <Text style={styles.quickActionText}>Quick Record</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.quickActionButton, styles.emergencyButton]}
-                  onPress={() => handleNavigation('EmergencyReport')}
-                >
-                  <Ionicons name="warning" size={32} color="#E74C3C" />
-                  <Text style={styles.quickActionText}>Emergency</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.quickActionButton}
-                  onPress={() => handleNavigation('NearbyReports')}
-                >
-                  <Ionicons name="location" size={32} color="#D4AC0D" />
-                  <Text style={styles.quickActionText}>Nearby</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.quickActionButton}
-                  onPress={() => handleNavigation('MyStats')}
-                >
-                  <Ionicons name="stats-chart" size={32} color="#8B7355" />
-                  <Text style={styles.quickActionText}>My Stats</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* Admin Quick Actions */}
-          {(userType.toLowerCase() === 'admin' || userType.toLowerCase() === 'administrator') && (
+          {/* Admin quick actions — mirrors web CustomDrawer */}
+          {isAdmin && (
             <View style={styles.quickActionsContainer}>
               <Text style={styles.quickActionsTitle}>Admin Quick Actions</Text>
               <View style={styles.quickActionsGrid}>
-                <TouchableOpacity 
-                  style={styles.quickActionButton}
-                  onPress={() => handleNavigation('LiveMonitoring')}
-                >
-                  <Ionicons name="pulse" size={32} color="#8B4513" />
-                  <Text style={styles.quickActionText}>Live Monitor</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.quickActionButton, styles.emergencyButton]}
-                  onPress={() => handleNavigation('SystemAlerts')}
-                >
-                  <Ionicons name="alert-circle" size={32} color="#E74C3C" />
-                  <Text style={styles.quickActionText}>System Alerts</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.quickActionButton}
-                  onPress={() => handleNavigation('GenerateReport')}
-                >
-                  <Ionicons name="document-attach" size={32} color="#D4AC0D" />
-                  <Text style={styles.quickActionText}>Generate Report</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.quickActionButton}
-                  onPress={() => handleNavigation('ManageThresholds')}
-                >
-                  <Ionicons name="options" size={32} color="#8B7355" />
-                  <Text style={styles.quickActionText}>Thresholds</Text>
-                </TouchableOpacity>
+                {[
+                  { icon: 'bar-chart-outline',      label: 'Analytics',     route: 'Analytics'         },
+                  { icon: 'warning-outline',         label: 'Notifications', route: 'AdminNotifications'},
+                  { icon: 'download-outline',        label: 'Export',        route: 'ExportReports'     },
+                  { icon: 'person-circle-outline',   label: 'Profile',       route: 'AdminProfile'      },
+                ].map((a, i) => (
+                  <TouchableOpacity key={i} style={styles.quickActionButton} onPress={() => handleNavigation(a.route)} activeOpacity={0.7}>
+                    <Ionicons name={a.icon} size={28} color={C.saddle} />
+                    <Text style={styles.quickActionText}>{a.label}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             </View>
           )}
 
-          {/* Bottom Menu Items */}
+          {/* User quick actions */}
+          {!isAdmin && (
+            <View style={styles.quickActionsContainer}>
+              <Text style={styles.quickActionsTitle}>Quick Actions</Text>
+              <View style={styles.quickActionsGrid}>
+                {[
+                  { icon: 'mic-circle-outline', label: 'Quick Record', route: 'Record'    },
+                  { icon: 'warning-outline',    label: 'Emergency',    route: 'Record'    },
+                  { icon: 'location-outline',   label: 'Nearby',       route: 'MapScreen' },
+                  { icon: 'stats-chart-outline',label: 'My Stats',     route: 'ReportHistory'},
+                ].map((a, i) => (
+                  <TouchableOpacity key={i} style={[styles.quickActionButton, i === 1 && styles.emergencyButton]} onPress={() => handleNavigation(a.route)} activeOpacity={0.7}>
+                    <Ionicons name={a.icon} size={28} color={i === 1 ? C.red : C.saddle} />
+                    <Text style={styles.quickActionText}>{a.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Bottom items */}
           <View style={styles.bottomSection}>
             <View style={styles.divider} />
-            {currentBottomItems.map(item => renderMenuItem(item, true))}
+            {bottomItems.map(item => renderMenuItem(item, true))}
           </View>
 
-          {/* Logout Button */}
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={handleLogout}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="log-out-outline" size={24} color="#E74C3C" />
+          {/* Logout */}
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.7}>
+            <Ionicons name="log-out-outline" size={22} color={C.red} />
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
+    <LogoutLoadingOverlay visible={logoutOverlay} />
+    </>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFF8DC', // Light cream background
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFF8DC',
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 25,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-  },
-  closeButton: {
-    alignSelf: 'flex-end',
-    padding: 5,
-  },
-  profileSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-    backgroundColor: 'rgba(255, 248, 220, 0.1)',
-    borderRadius: 15,
-    padding: 15,
-  },
-  profileImage: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    marginRight: 15,
-    borderWidth: 3,
-    borderColor: '#FFF8DC',
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  profileName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 5,
-  },
-  profileEmail: {
-    fontSize: 14,
-    color: '#FFF8DC',
-    marginBottom: 8,
-  },
-  adminBadge: {
-    backgroundColor: 'rgba(255, 248, 220, 0.3)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: '#FFF8DC',
-  },
-  adminBadgeText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 248, 220, 0.2)',
-    borderRadius: 15,
-    paddingVertical: 15,
-    marginTop: 10,
-  },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#ffffff',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#FFF8DC',
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: 'rgba(255, 248, 220, 0.4)',
-  },
-  menuContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 25,
-  },
-  menuSection: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#8B4513',
-    marginBottom: 15,
-    paddingLeft: 5,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    marginBottom: 8,
-    shadowColor: '#8B4513',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-    borderLeftWidth: 4,
-    borderLeftColor: '#D4AC0D',
-  },
-  bottomMenuItem: {
-    backgroundColor: '#FFFACD', // Very light mustard
-    borderLeftColor: '#B7950B',
-  },
-  menuText: {
-    flex: 1,
-    fontSize: 16,
-    color: '#8B4513',
-    marginLeft: 15,
-    fontWeight: '500',
-  },
-  quickActionsContainer: {
-    backgroundColor: '#ffffff',
-    borderRadius: 15,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#8B4513',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: '#F5DEB3',
-  },
-  quickActionsTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#8B4513',
-    marginBottom: 15,
-  },
-  quickActionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  quickActionButton: {
-    width: '48%',
-    alignItems: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 10,
-    backgroundColor: '#FFFACD',
-    borderRadius: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#F5DEB3',
-    shadowColor: '#8B4513',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  emergencyButton: {
-    backgroundColor: '#FFF5F5',
-    borderColor: '#FFE4E1',
-  },
-  quickActionText: {
-    fontSize: 12,
-    color: '#8B4513',
-    marginTop: 8,
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  bottomSection: {
-    marginTop: 10,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#F5DEB3',
-    marginVertical: 15,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    backgroundColor: '#FFF5F5',
-    borderRadius: 12,
-    marginTop: 20,
-    marginBottom: 30,
-    borderWidth: 1,
-    borderColor: '#FFE4E1',
-    shadowColor: '#E74C3C',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  logoutText: {
-    fontSize: 16,
-    color: '#E74C3C',
-    marginLeft: 10,
-    fontWeight: '600',
-  },
-  profileChevron: {
-    marginLeft: 10,
-  },
+  container:        { flex: 1, backgroundColor: C.cream },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.cream },
+  header:           { paddingHorizontal: 20, paddingTop: 50, paddingBottom: 24, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  closeBtn:         { alignSelf: 'flex-end', padding: 4, marginBottom: 8 },
+  logoRow:          { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  logoImg:          { width: 36, height: 36, borderRadius: 8 },
+  logoTitle:        { color: C.cream, fontWeight: '800', fontSize: 16, letterSpacing: 2 },
+  profileSection:   { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, padding: 12, marginBottom: 14 },
+  profileImage:     { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: C.cream, marginRight: 12 },
+  profileInitials:  { width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.25)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  profileInitialsText: { color: C.cream, fontWeight: '800', fontSize: 20 },
+  profileInfo:      { flex: 1 },
+  profileName:      { color: C.white, fontWeight: '700', fontSize: 16, marginBottom: 2 },
+  profileEmail:     { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginBottom: 4 },
+  adminBadge:       { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, alignSelf: 'flex-start', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' },
+  adminBadgeText:   { color: C.white, fontSize: 10, fontWeight: '600' },
+  statsContainer:   { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12, paddingVertical: 12 },
+  statItem:         { alignItems: 'center', flex: 1 },
+  statNumber:       { fontSize: 20, fontWeight: '800', color: C.white },
+  statLabel:        { fontSize: 11, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  statDivider:      { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.3)' },
+  menuContainer:    { paddingHorizontal: 18, paddingTop: 22 },
+  sectionTitle:     { fontSize: 16, fontWeight: '700', color: C.saddle, marginBottom: 12, paddingLeft: 4 },
+  menuItem:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 16, backgroundColor: C.white, borderRadius: 12, marginBottom: 8, borderLeftWidth: 4, borderLeftColor: C.gold, elevation: 2, shadowColor: C.dark, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3 },
+  bottomMenuItem:   { backgroundColor: '#FFFACD', borderLeftColor: '#B7950B' },
+  menuText:         { flex: 1, fontSize: 15, color: C.saddle, marginLeft: 12, fontWeight: '500' },
+  quickActionsContainer: { backgroundColor: C.white, borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F5DEB3', elevation: 2, shadowColor: C.dark, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3 },
+  quickActionsTitle:{ fontSize: 14, fontWeight: '700', color: C.saddle, marginBottom: 12 },
+  quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  quickActionButton:{ width: '48%', alignItems: 'center', paddingVertical: 14, backgroundColor: '#FFFACD', borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#F5DEB3' },
+  emergencyButton:  { backgroundColor: '#FFF5F5', borderColor: '#FFE4E1' },
+  quickActionText:  { fontSize: 11, color: C.saddle, marginTop: 6, fontWeight: '600', textAlign: 'center' },
+  bottomSection:    { marginTop: 6 },
+  divider:          { height: 1, backgroundColor: '#F5DEB3', marginVertical: 12 },
+  logoutButton:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, backgroundColor: '#FFF5F5', borderRadius: 12, marginTop: 8, marginBottom: 32, borderWidth: 1, borderColor: '#FFE4E1' },
+  logoutText:       { fontSize: 15, color: C.red, marginLeft: 8, fontWeight: '600' },
 });
 
 export default CustomDrawer;
+
+const lo = StyleSheet.create({
+  inner:        { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, paddingVertical: 60 },
+  logoWrap:     { width: 100, height: 100, justifyContent: 'center', alignItems: 'center', marginBottom: 28, position: 'relative' },
+  logoRing:     { position: 'absolute', width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: '#DAA520', borderTopColor: 'transparent' },
+  logo:         { width: 72, height: 72, borderRadius: 16 },
+  title:        { fontSize: 24, fontWeight: '900', color: '#FFFFFF', marginBottom: 6, letterSpacing: 1 },
+  subtitle:     { fontSize: 14, color: 'rgba(255,255,255,0.75)', marginBottom: 32 },
+  barTrack:     { width: '100%', height: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 4, overflow: 'hidden', marginBottom: 8 },
+  barFill:      { height: '100%', backgroundColor: '#DAA520', borderRadius: 4 },
+  pct:          { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 28 },
+  steps:        { width: '100%', gap: 12, marginBottom: 36 },
+  stepRow:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stepDot:      { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)' },
+  stepDotDone:  { backgroundColor: '#DAA520', borderColor: '#DAA520' },
+  stepDotInner: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.4)' },
+  stepText:     { fontSize: 14, color: 'rgba(255,255,255,0.55)', fontWeight: '500' },
+  stepTextDone: { color: '#FFFFFF', fontWeight: '700' },
+  badge:        { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(218,165,32,0.3)' },
+  badgeText:    { fontSize: 12, color: '#DAA520', fontWeight: '600' },
+});

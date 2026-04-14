@@ -5,16 +5,24 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { PaperProvider, MD3LightTheme } from 'react-native-paper';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from './utils/toast';
+import LandingPage from './Pages/LandingPage';
 import Login from './Pages/Auth/Login';
 import Register from './Pages/Auth/Register';
 import Home from './Pages/Home'
 import AdminDashboard from './Pages/Admin/AdminDashboard';
 import UserManagement from './Pages/Admin/UserManagement';
 import AdminNoiseReportsScreen from './Pages/Admin/NoiseReports';
+import AdminAnalytics from './Pages/Admin/Analytics';
+import AdminNotifications from './Pages/Admin/AdminNotifications';
+import AdminProfile from './Pages/Admin/AdminProfile';
+import ExportReports from './Pages/Admin/ExportReports';
 import UserProfile from './Pages/UserProfile';
 import MapScreen from './Pages/User/Map';
 import AudioRecordingScreen from './Pages/User/Report';
 import UserReportsScreen from './Pages/User/ReportHistory';
+import NoiseHealthExposure from './Pages/User/NoiseHealthExposure';
+import CommunityForum from './Pages/CommunityForum';
+import ForumModerationAdmin from './Pages/Admin/ForumModeration';
 
 const Stack = createStackNavigator();
 
@@ -41,12 +49,19 @@ export default function App() {
       <NavigationContainer onStateChange={navigationStateChange}>
         <StatusBar style="auto" />
         <Stack.Navigator 
-          initialRouteName="Login"
+          initialRouteName="Landing"
           screenOptions={{
             headerShown: false,
             gestureEnabled: true,
           }}
         >
+          {/* Landing Page */}
+          <Stack.Screen
+            name="Landing"
+            component={LandingPage}
+            options={{ headerShown: false, gestureEnabled: false }}
+          />
+
           {/* Auth Screens */}
           <Stack.Screen 
             name="Login" 
@@ -97,6 +112,24 @@ export default function App() {
               gestureEnabled: true,
             }}
           />
+
+          <Stack.Screen
+            name="NoiseHealthExposure"
+            component={NoiseHealthExposure}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
+
+          <Stack.Screen
+            name="CommunityForum"
+            component={CommunityForum}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
+
+          <Stack.Screen
+            name="ForumModerationAdmin"
+            component={ForumModerationAdmin}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
           
           {/* Admin Screens */}
           <Stack.Screen
@@ -110,10 +143,27 @@ export default function App() {
           <Stack.Screen
             name="NoiseReports"
             component={AdminNoiseReportsScreen}
-            options={{
-              headerShown: false,
-              gestureEnabled: true,
-            }}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
+          <Stack.Screen
+            name="Analytics"
+            component={AdminAnalytics}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
+          <Stack.Screen
+            name="AdminNotifications"
+            component={AdminNotifications}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
+          <Stack.Screen
+            name="AdminProfile"
+            component={AdminProfile}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
+          <Stack.Screen
+            name="ExportReports"
+            component={ExportReports}
+            options={{ headerShown: false, gestureEnabled: true }}
           />
 
           {/* Placeholder screens for missing routes */}
