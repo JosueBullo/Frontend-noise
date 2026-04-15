@@ -339,8 +339,10 @@ const Analytics = () => {
         <StatCard title="Period Reports" value={r.periodReports}   icon="document-text-outline"    color={C.saddle} />
         <StatCard title="Total Reports"  value={r.totalReports}    icon="bar-chart-outline"        color={C.mid}    />
         <StatCard title="Resolved"       value={r.resolvedReports} icon="checkmark-circle-outline" color={C.green}  />
-        {ai.totalAiReports > 0 && <StatCard title="AI Analyzed" value={ai.totalAiReports} icon="hardware-chip-outline" color={C.purple} />}
-        {ai.avgDecibel > 0     && <StatCard title="Avg Decibel" value={`${ai.avgDecibel} dB`} icon="volume-high-outline" color={C.blue} />}
+        {ai.totalAiReports > 0 && <StatCard title="AI Analyzed"  value={ai.totalAiReports}           icon="hardware-chip-outline"  color={C.purple} />}
+        {ai.avgDecibel > 0     && <StatCard title="Avg Decibel"  value={`${ai.avgDecibel} dB`}       icon="volume-high-outline"    color={C.blue}   />}
+        {ai.totalReportable > 0 && <StatCard title="Reportable" value={ai.totalReportable}           icon="alert-circle-outline"   color={C.red}    />}
+        {ai.totalSevere > 0    && <StatCard title="Severe"       value={ai.totalSevere}              icon="warning-outline"        color="#E65100"  />}
       </View>
     );
   };
