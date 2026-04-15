@@ -39,6 +39,7 @@ function CreatePostModal({ visible, onClose, onPosted, token }) {
   const [text, setText]       = useState('');
   const [media, setMedia]     = useState(null); // { uri, type: 'image'|'video' }
   const [loading, setLoading] = useState(false);
+  const [warning, setWarning] = useState('');
 
   const pickMedia = async (type) => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -55,6 +56,7 @@ function CreatePostModal({ visible, onClose, onPosted, token }) {
 
   const submit = async () => {
     if (!text.trim() && !media) { Alert.alert('Empty post', 'Add text or media to post.'); return; }
+    setWarning('');
     setLoading(true);
     try {
       const form = new FormData();
@@ -70,12 +72,19 @@ function CreatePostModal({ visible, onClose, onPosted, token }) {
         body: form,
       });
       const data = await res.json();
-      if (!res.ok) { Alert.alert('Error', data.error || 'Failed to post.'); return; }
-      setText(''); setMedia(null);
+      if (!res.ok) {
+        if (res.status === 400 && data.error?.toLowerCase().includes('inappropriate')) {
+          setWarning('Your post contains inappropriate or offensive language. Please revise it before posting.');
+        } else {
+          setWarning(data.error || 'Could not submit post. Please try again.');
+        }
+        return;
+      }
+      setText(''); setMedia(null); setWarning('');
       onPosted(data.post);
       onClose();
     } catch (e) {
-      Alert.alert('Error', 'Network error. Please try again.');
+      setWarning('Connection error. Please check your internet and try again.');
     } finally {
       setLoading(false);
     }
@@ -125,6 +134,14 @@ function CreatePostModal({ visible, onClose, onPosted, token }) {
             </View>
           </ScrollView>
 
+          {/* Warning banner */}
+          {!!warning && (
+            <View style={cp.warningBox}>
+              <Ionicons name="warning-outline" size={18} color="#E65100" />
+              <Text style={cp.warningText}>{warning}</Text>
+            </View>
+          )}
+
           <TouchableOpacity
             style={[cp.postBtn, (!text.trim() && !media) && cp.postBtnDisabled]}
             onPress={submit}
@@ -158,6 +175,8 @@ const cp = StyleSheet.create({
   postBtn:      { backgroundColor: C.saddle, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   postBtnDisabled: { backgroundColor: C.muted },
   postBtnText:  { color: C.white, fontWeight: '800', fontSize: 16 },
+  warningBox:   { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#FFF3E0', borderRadius: 10, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#FFB74D' },
+  warningText:  { flex: 1, fontSize: 13, color: '#E65100', lineHeight: 18 },
 });
 
 // ── Comments Modal ────────────────────────────────────────────────────────────
@@ -165,11 +184,13 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated
   const [text, setText]       = useState('');
   const [loading, setLoading] = useState(false);
   const [comments, setComments] = useState(post?.comments || []);
+  const [warning, setWarning] = useState('');
 
-  useEffect(() => { setComments(post?.comments || []); }, [post]);
+  useEffect(() => { setComments(post?.comments || []); setWarning(''); }, [post]);
 
   const submit = async () => {
     if (!text.trim()) return;
+    setWarning('');
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/forum/posts/${post._id}/comments`, {
@@ -178,7 +199,14 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated
         body: JSON.stringify({ text: text.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) { Alert.alert('Error', data.error || 'Failed to comment.'); return; }
+      if (!res.ok) {
+        if (res.status === 400 && data.error?.toLowerCase().includes('inappropriate')) {
+          setWarning('Your comment contains inappropriate or offensive language. Please revise it before posting.');
+        } else {
+          setWarning(data.error || 'Could not post comment. Please try again.');
+        }
+        return;
+      }
       setComments(data.comments);
       setText('');
       onUpdated(post._id, { comments: data.comments });
@@ -238,6 +266,13 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated
           />
 
           <View style={cm.inputRow}>
+            {!!warning && (
+              <View style={cm.warningBox}>
+                <Ionicons name="warning-outline" size={16} color="#E65100" />
+                <Text style={cm.warningText}>{warning}</Text>
+              </View>
+            )}
+            <View style={cm.inputInner}>
             <TextInput
               style={cm.input}
               placeholder="Write a comment..."
@@ -256,6 +291,7 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated
                 : <Ionicons name="send" size={18} color={C.white} />
               }
             </TouchableOpacity>
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -277,7 +313,10 @@ const cm = StyleSheet.create({
   username:    { fontSize: 12, fontWeight: '800', color: C.saddle, marginBottom: 2 },
   commentText: { fontSize: 14, color: C.text, lineHeight: 20 },
   time:        { fontSize: 10, color: C.muted, marginTop: 4 },
-  inputRow:    { flexDirection: 'row', gap: 10, alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border },
+  inputRow:    { paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border },
+  inputInner:  { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  warningBox:  { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#FFF3E0', borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: '#FFB74D' },
+  warningText: { flex: 1, fontSize: 12, color: '#E65100', lineHeight: 17 },
   input:       { flex: 1, backgroundColor: C.bg, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: C.text, borderWidth: 1, borderColor: C.border },
   sendBtn:     { width: 44, height: 44, borderRadius: 22, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center' },
   sendBtnOff:  { backgroundColor: C.muted },

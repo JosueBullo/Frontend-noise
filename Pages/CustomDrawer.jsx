@@ -100,6 +100,18 @@ const CustomDrawer = ({ navigation, onClose }) => {
   const [userType, setUserType]       = useState('user');
   const [stats, setStats]             = useState({ reports: 0, users: 0 });
   const [logoutOverlay, setLogoutOverlay] = useState(false);
+  const [notifCount, setNotifCount]   = useState(0);
+
+  // Poll notification count every 30s
+  useEffect(() => {
+    const loadCount = async () => {
+      const stored = await AsyncStorage.getItem('notifCount');
+      if (stored) setNotifCount(parseInt(stored) || 0);
+    };
+    loadCount();
+    const timer = setInterval(loadCount, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // ── Menu definitions (mirrors web CustomDrawer) ──────────────
   const userMenuItems = [
@@ -109,7 +121,7 @@ const CustomDrawer = ({ navigation, onClose }) => {
     { id: '4', title: 'My History',          icon: 'time-outline',          route: 'ReportHistory'       },
     { id: '5', title: 'Community Forum',     icon: 'people-outline',        route: 'CommunityForum'      },
     { id: '6', title: 'Notifications',       icon: 'notifications-outline', route: 'Notifications'       },
-    { id: '7', title: 'Analytics (Personal)',icon: 'analytics-outline',     route: 'PersonalAnalytics'   },
+    { id: '7', title: 'My Analytics',        icon: 'analytics-outline',     route: 'PersonalAnalytics'   },
     { id: '8', title: 'Health Exposure',     icon: 'fitness-outline',       route: 'NoiseHealthExposure' },
   ];
 
@@ -276,6 +288,11 @@ const handleLogout = () => {
     >
       <Ionicons name={item.icon} size={22} color={C.saddle} />
       <Text style={styles.menuText}>{item.title}</Text>
+      {item.route === 'Notifications' && notifCount > 0 && (
+        <View style={styles.notifBadge}>
+          <Text style={styles.notifBadgeText}>{notifCount > 99 ? '99+' : notifCount}</Text>
+        </View>
+      )}
       <Ionicons name="chevron-forward" size={18} color={C.gold} />
     </TouchableOpacity>
   );
@@ -449,6 +466,8 @@ const styles = StyleSheet.create({
   divider:          { height: 1, backgroundColor: '#F5DEB3', marginVertical: 12 },
   logoutButton:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, backgroundColor: '#FFF5F5', borderRadius: 12, marginTop: 8, marginBottom: 32, borderWidth: 1, borderColor: '#FFE4E1' },
   logoutText:       { fontSize: 15, color: C.red, marginLeft: 8, fontWeight: '600' },
+  notifBadge:       { backgroundColor: C.red, borderRadius: 9, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4, marginRight: 4 },
+  notifBadgeText:   { color: C.white, fontSize: 9, fontWeight: '900' },
 });
 
 export default CustomDrawer;

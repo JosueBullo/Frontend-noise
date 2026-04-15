@@ -83,6 +83,12 @@ export default function AdminNoiseReportsScreen({ navigation }) {
   const [selectedStatus, setSelectedStatus]   = useState(null);
   const [updatingStatus, setUpdatingStatus]   = useState(false);
 
+  // AI Forensic Analysis modal
+  const [aiModalVisible, setAiModalVisible]   = useState(false);
+  const [aiModalData, setAiModalData]         = useState(null); // single aiResult object
+
+  const openAiModal = (aiResult) => { setAiModalData(aiResult); setAiModalVisible(true); };
+
   // ── Drawer ──────────────────────────────────────────────────
   const openDrawer = () => {
     setDrawerVisible(true);
@@ -485,6 +491,30 @@ export default function AdminNoiseReportsScreen({ navigation }) {
                     <Text style={[s.aiDetailValue, { color: C.red }]}>🔴 {report.aiSummary.severeCount} severe/critical</Text>
                   </View>
                 )}
+
+                {/* Per-file forensic buttons */}
+                {report.aiResults && report.aiResults.length > 0 && (
+                  <View style={{ marginTop: 10, gap: 6 }}>
+                    {report.aiResults.map((aiResult, idx) => (
+                      <TouchableOpacity
+                        key={idx}
+                        style={[s.forensicBtn, aiResult.is_reportable && s.forensicBtnReportable]}
+                        onPress={() => openAiModal(aiResult)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="flask-outline" size={16} color={aiResult.is_reportable ? C.red : C.saddle} />
+                        <Text style={[s.forensicBtnText, aiResult.is_reportable && { color: C.red }]}>
+                          🔬 AI Forensic Analysis — File {idx + 1}
+                          {aiResult.fileName ? ` (${aiResult.fileName.substring(0, 20)}...)` : ''}
+                        </Text>
+                        {aiResult.is_reportable && (
+                          <View style={s.reportableDot}><Text style={s.reportableDotText}>!</Text></View>
+                        )}
+                        <Ionicons name="chevron-forward" size={16} color={aiResult.is_reportable ? C.red : C.saddle} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
 
@@ -596,6 +626,151 @@ export default function AdminNoiseReportsScreen({ navigation }) {
           {filteredReports.map(renderReport)}
         </ScrollView>
       )}
+
+      {/* AI Forensic Analysis Modal */}
+      <Modal visible={aiModalVisible} transparent animationType="slide" onRequestClose={() => setAiModalVisible(false)}>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalBox, { maxHeight: '92%' }]}>
+            {/* Header */}
+            <LinearGradient colors={[C.saddle, '#654321']} style={s.aiModalHeader}>
+              <Text style={s.aiModalTitle}>🔬 AI Forensic Analysis</Text>
+              <TouchableOpacity onPress={() => setAiModalVisible(false)} style={{ padding: 4 }}>
+                <Ionicons name="close" size={26} color={C.gold} />
+              </TouchableOpacity>
+            </LinearGradient>
+
+            <ScrollView style={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+              {aiModalData && (() => {
+                const d = aiModalData;
+                return (
+                  <>
+                    {/* File info */}
+                    <View style={s.aiMFileRow}>
+                      <Ionicons name={d.type === 'video' ? 'videocam-outline' : 'musical-notes-outline'} size={22} color={C.saddle} />
+                      <Text style={s.aiMFileName} numberOfLines={2}>{d.fileName || 'Recording'}</Text>
+                      {d.source && (
+                        <View style={[s.sourcePill, d.source === 'live' ? s.sourcePillLive : s.sourcePillDl]}>
+                          <Ionicons name={d.source === 'live' ? 'mic' : 'download'} size={11} color="#fff" />
+                          <Text style={s.sourcePillText}>{d.source === 'live' ? 'Live' : 'Downloaded'}</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Reportable alert */}
+                    {d.is_reportable && (
+                      <LinearGradient
+                        colors={d.severity_name === 'CRITICAL' ? ['#8B0000','#5D0000'] : ['#F44336','#D32F2F']}
+                        style={s.aiMAlert}
+                      >
+                        <Ionicons name="alert-circle" size={24} color="#fff" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.aiMAlertTitle}>
+                            {d.severity_name === 'CRITICAL' ? '🚨 CRITICAL VIOLATION' : '⚠️ REPORTABLE NOISE'}
+                          </Text>
+                          {d.recommendation && <Text style={s.aiMAlertSub}>{d.recommendation}</Text>}
+                        </View>
+                      </LinearGradient>
+                    )}
+
+                    {/* Metric cards */}
+                    <View style={s.aiMMetrics}>
+                      <LinearGradient colors={[C.saddle, '#654321']} style={s.aiMMetricCard}>
+                        <Ionicons name="volume-high" size={22} color={C.gold} />
+                        <Text style={s.aiMMetricVal}>{d.decibel ?? 0} dB</Text>
+                        <Text style={s.aiMMetricLbl}>DECIBEL</Text>
+                      </LinearGradient>
+                      <LinearGradient colors={[C.saddle, '#5D3A1A']} style={s.aiMMetricCard}>
+                        <Ionicons name="speedometer" size={22} color={C.gold} />
+                        <Text style={s.aiMMetricVal}>{d.noise_level?.level || 'N/A'}</Text>
+                        <Text style={s.aiMMetricLbl}>NOISE LEVEL</Text>
+                      </LinearGradient>
+                      <LinearGradient colors={['#654321', C.saddle]} style={s.aiMMetricCard}>
+                        <Ionicons name="navigate" size={22} color={C.gold} />
+                        <Text style={s.aiMMetricVal}>~{d.distance?.meters ?? 0}m</Text>
+                        <Text style={s.aiMMetricLbl}>DISTANCE</Text>
+                      </LinearGradient>
+                    </View>
+
+                    {/* Distance details */}
+                    {d.distance && (
+                      <View style={s.aiMSection}>
+                        <View style={s.aiMSectionHeader}>
+                          <Ionicons name="compass" size={18} color={C.saddle} />
+                          <Text style={s.aiMSectionTitle}>Distance Estimation</Text>
+                        </View>
+                        <Text style={s.aiMDistCat}>{d.distance.category || 'Unknown'}</Text>
+                        <Text style={s.aiMDistMeters}>{d.distance.meters} meters from source</Text>
+                        {d.distance.reference_sound && (
+                          <Text style={s.aiMDistRef}>Based on {d.distance.reference_sound} ({d.distance.reference_db}dB at 1m)</Text>
+                        )}
+                        {d.distance.description && (
+                          <Text style={s.aiMDistDesc}>{d.distance.description}</Text>
+                        )}
+                      </View>
+                    )}
+
+                    {/* Violation reasons */}
+                    {d.reasons && d.reasons.length > 0 && (
+                      <View style={[s.aiMSection, { backgroundColor: '#FFEBEE' }]}>
+                        <View style={s.aiMSectionHeader}>
+                          <Ionicons name="alert" size={18} color={C.red} />
+                          <Text style={[s.aiMSectionTitle, { color: C.red }]}>Violation Reasons</Text>
+                        </View>
+                        {d.reasons.map((r, i) => (
+                          <View key={i} style={s.aiMReasonRow}>
+                            <Ionicons name="alert-circle" size={14} color={C.red} />
+                            <Text style={s.aiMReasonText}>{r}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    {/* Sound classifications */}
+                    {d.detections && d.detections.length > 0 && (
+                      <View style={s.aiMSection}>
+                        <View style={s.aiMSectionHeader}>
+                          <Ionicons name="list" size={18} color={C.saddle} />
+                          <Text style={s.aiMSectionTitle}>Sound Classifications</Text>
+                        </View>
+                        {d.detections.map((det, i) => (
+                          <View key={i} style={s.aiMDetRow}>
+                            <LinearGradient
+                              colors={i === 0 ? [C.gold, C.saddle] : ['#5D3A1A','#3D2B10']}
+                              style={s.aiMDetRank}
+                            >
+                              <Text style={s.aiMDetRankText}>#{i+1}</Text>
+                            </LinearGradient>
+                            <View style={{ flex: 1 }}>
+                              <Text style={s.aiMDetClass}>{det.class}</Text>
+                              <View style={s.aiMConfRow}>
+                                <View style={s.aiMConfBg}>
+                                  <LinearGradient
+                                    colors={[C.gold, C.saddle]}
+                                    style={[s.aiMConfFill, { width: `${(det.confidence * 100).toFixed(1)}%` }]}
+                                  />
+                                </View>
+                                <Text style={s.aiMConfPct}>{(det.confidence * 100).toFixed(1)}%</Text>
+                              </View>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    {/* Processing time */}
+                    {d.processing_time != null && (
+                      <View style={s.aiMFooter}>
+                        <Ionicons name="time-outline" size={14} color={C.gold} />
+                        <Text style={s.aiMFooterText}>Processed in {d.processing_time}s</Text>
+                      </View>
+                    )}
+                  </>
+                );
+              })()}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Status Modal */}
       <Modal visible={statusModalVisible} transparent animationType="fade" onRequestClose={() => setStatusModalVisible(false)}>
@@ -745,4 +920,47 @@ const s = StyleSheet.create({
   // video player
   videoPlayer:        { width: '100%', height: 220, backgroundColor: '#000', borderRadius: 10, overflow: 'hidden' },
   timestamp:          { fontSize: 11, color: '#999', textAlign: 'center', marginTop: 6 },
+
+  // Forensic button
+  forensicBtn:        { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFF9F0', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: C.gold },
+  forensicBtnReportable: { backgroundColor: '#FFF5F5', borderColor: C.red },
+  forensicBtnText:    { flex: 1, fontSize: 12, fontWeight: '700', color: C.saddle },
+  reportableDot:      { width: 18, height: 18, borderRadius: 9, backgroundColor: C.red, justifyContent: 'center', alignItems: 'center' },
+  reportableDotText:  { color: '#fff', fontSize: 10, fontWeight: '900' },
+
+  // AI Forensic Modal
+  aiModalHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 14, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
+  aiModalTitle:       { fontSize: 17, fontWeight: '800', color: C.gold },
+  aiMFileRow:         { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#EEE' },
+  aiMFileName:        { flex: 1, fontSize: 13, fontWeight: '600', color: C.text },
+  sourcePill:         { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  sourcePillLive:     { backgroundColor: C.green },
+  sourcePillDl:       { backgroundColor: C.blue },
+  sourcePillText:     { fontSize: 10, color: '#fff', fontWeight: '700' },
+  aiMAlert:           { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 12, padding: 14, marginBottom: 14 },
+  aiMAlertTitle:      { color: '#fff', fontSize: 13, fontWeight: '800', marginBottom: 3 },
+  aiMAlertSub:        { color: 'rgba(255,255,255,0.85)', fontSize: 12 },
+  aiMMetrics:         { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  aiMMetricCard:      { flex: 1, borderRadius: 12, padding: 12, alignItems: 'center', gap: 6 },
+  aiMMetricVal:       { color: C.gold, fontSize: 15, fontWeight: '800' },
+  aiMMetricLbl:       { color: '#fff', fontSize: 9, opacity: 0.8 },
+  aiMSection:         { backgroundColor: '#FAF5EB', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E8DDD0' },
+  aiMSectionHeader:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  aiMSectionTitle:    { fontSize: 14, fontWeight: '700', color: C.saddle },
+  aiMDistCat:         { fontSize: 16, fontWeight: '800', color: C.saddle, marginBottom: 2 },
+  aiMDistMeters:      { fontSize: 13, color: C.text, marginBottom: 4 },
+  aiMDistRef:         { fontSize: 11, color: '#888', fontStyle: 'italic', marginBottom: 2 },
+  aiMDistDesc:        { fontSize: 12, color: '#666' },
+  aiMReasonRow:       { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 6 },
+  aiMReasonText:      { flex: 1, fontSize: 13, color: '#555' },
+  aiMDetRow:          { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+  aiMDetRank:         { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  aiMDetRankText:     { color: '#fff', fontSize: 11, fontWeight: '800' },
+  aiMDetClass:        { fontSize: 13, fontWeight: '600', color: C.text, marginBottom: 4 },
+  aiMConfRow:         { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  aiMConfBg:          { flex: 1, height: 6, backgroundColor: '#EEE', borderRadius: 3, overflow: 'hidden' },
+  aiMConfFill:        { height: '100%', borderRadius: 3 },
+  aiMConfPct:         { fontSize: 11, fontWeight: '700', color: C.saddle, width: 42 },
+  aiMFooter:          { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#EEE', marginTop: 4 },
+  aiMFooterText:      { fontSize: 12, color: '#888' },
 });

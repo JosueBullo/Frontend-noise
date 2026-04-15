@@ -22,6 +22,8 @@ import AudioRecordingScreen from './Pages/User/Report';
 import UserReportsScreen from './Pages/User/ReportHistory';
 import NoiseHealthExposure from './Pages/User/NoiseHealthExposure';
 import CommunityForum from './Pages/CommunityForum';
+import PersonalAnalytics from './Pages/User/PersonalAnalytics';
+import UserNotifications from './Pages/User/Notifications';
 import ForumModerationAdmin from './Pages/Admin/ForumModeration';
 
 const Stack = createStackNavigator();
@@ -128,6 +130,18 @@ export default function App() {
           <Stack.Screen
             name="ForumModerationAdmin"
             component={ForumModerationAdmin}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
+
+          <Stack.Screen
+            name="PersonalAnalytics"
+            component={PersonalAnalytics}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
+
+          <Stack.Screen
+            name="Notifications"
+            component={UserNotifications}
             options={{ headerShown: false, gestureEnabled: true }}
           />
           
