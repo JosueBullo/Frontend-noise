@@ -73,18 +73,23 @@ function CreatePostModal({ visible, onClose, onPosted, token }) {
       });
       const data = await res.json();
       if (!res.ok) {
+        // Show specific warning for bad words, generic error for others
         if (res.status === 400 && data.error?.toLowerCase().includes('inappropriate')) {
-          setWarning('Your post contains inappropriate or offensive language. Please revise it before posting.');
+          Alert.alert(
+            'Post Not Allowed',
+            'Your post could not be submitted because it contains inappropriate or offensive language. Please revise your message and try again.',
+            [{ text: 'Edit Post', style: 'default' }]
+          );
         } else {
-          setWarning(data.error || 'Could not submit post. Please try again.');
+          Alert.alert('Could Not Post', data.error || 'Something went wrong. Please try again.');
         }
         return;
       }
-      setText(''); setMedia(null); setWarning('');
+      setText(''); setMedia(null);
       onPosted(data.post);
       onClose();
     } catch (e) {
-      setWarning('Connection error. Please check your internet and try again.');
+      Alert.alert('Connection Error', 'Unable to reach the server. Please check your internet connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -201,9 +206,13 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated
       const data = await res.json();
       if (!res.ok) {
         if (res.status === 400 && data.error?.toLowerCase().includes('inappropriate')) {
-          setWarning('Your comment contains inappropriate or offensive language. Please revise it before posting.');
+          Alert.alert(
+            'Comment Not Allowed',
+            'Your comment could not be posted because it contains inappropriate or offensive language. Please revise it and try again.',
+            [{ text: 'Edit Comment', style: 'default' }]
+          );
         } else {
-          setWarning(data.error || 'Could not post comment. Please try again.');
+          Alert.alert('Could Not Comment', data.error || 'Something went wrong. Please try again.');
         }
         return;
       }

@@ -160,10 +160,35 @@ export default function Login({ navigation }) {
 
     } catch (e) {
       setLoading(false);
-      const msg = e.response?.data?.message
-        || (e.request ? 'Network error. Check your connection.' : e.message)
-        || 'Login failed';
-      showToast('error', 'Login Failed', msg);
+      const status = e.response?.status;
+      const serverMsg = e.response?.data?.message;
+
+      let title = 'Login Failed';
+      let msg = 'Something went wrong. Please try again.';
+
+      if (e.request && !e.response) {
+        title = 'No Connection';
+        msg = 'Unable to reach the server. Please check your internet connection.';
+      } else if (status === 400) {
+        title = 'Invalid Credentials';
+        msg = serverMsg || 'The email or password you entered is incorrect.';
+      } else if (status === 403) {
+        title = 'Email Not Verified';
+        msg = serverMsg || 'Please verify your email address before logging in. Check your inbox for the verification link.';
+      } else if (status === 404) {
+        title = 'Account Not Found';
+        msg = 'No account found with this email address. Please register first.';
+      } else if (status === 429) {
+        title = 'Too Many Attempts';
+        msg = 'Too many login attempts. Please wait a moment before trying again.';
+      } else if (status >= 500) {
+        title = 'Server Error';
+        msg = 'The server is currently unavailable. Please try again later.';
+      } else if (serverMsg) {
+        msg = serverMsg;
+      }
+
+      showToast('error', title, msg);
     }
   };
 
