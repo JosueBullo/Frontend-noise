@@ -5,7 +5,7 @@
 // src/utils/api.js
 // src/utils/api.js
 
-const API_BASE_URL = 'https://backend-noisewatch-mix.vercel.app'; 
+const API_BASE_URL = 'https://backend-noisewatch-mix.onrender.com'; 
 // const API_BASE_URL = 'https://noninduced-georgina-logiest.ngrok-free.dev'; 
 // https://answeringly-priviest-tyree.ngrok-free.dev
 export default API_BASE_URL

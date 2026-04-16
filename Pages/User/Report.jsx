@@ -3979,7 +3979,7 @@ export default function AudioRecordingScreen({ navigation }) {
   const soundRef = useRef(null);
   const analyzingInterval = useRef(null);
 
-  const AI_SERVICE_URL = 'https://answeringly-priviest-tyree.ngrok-free.dev';
+  const AI_SERVICE_URL = 'https://ma1chan-noisewatch-ml.hf.space';
 
   // Auto-get location when component mounts
   useEffect(() => {
