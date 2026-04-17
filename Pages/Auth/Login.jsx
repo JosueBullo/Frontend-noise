@@ -128,11 +128,17 @@ export default function Login({ navigation }) {
     if (password.length < 6)               { showToast('error', 'Too Short',          'Password must be at least 6 characters'); return; }
 
     setLoading(true);
+
+    // Wake up Render server first (cold start can take 30-60s)
+    try {
+      await axios.get(`${API_BASE_URL}/health`, { timeout: 60000 });
+    } catch (_) { /* ignore — proceed anyway */ }
+
     try {
       const { data } = await axios.post(
         `${API_BASE_URL}/auth/login`,
         { email: email.trim().toLowerCase(), password: password.trim() },
-        { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
+        { headers: { 'Content-Type': 'application/json' }, timeout: 60000 }
       );
 
       if (!data.success) throw new Error(data.message || 'Login failed');
@@ -168,7 +174,7 @@ export default function Login({ navigation }) {
 
       if (e.request && !e.response) {
         title = 'No Connection';
-        msg = 'Unable to reach the server. Please check your internet connection.';
+        msg = 'Server is waking up. Please wait 30 seconds and try again.';
       } else if (status === 400) {
         title = 'Invalid Credentials';
         msg = serverMsg || 'The email or password you entered is incorrect.';
