@@ -4,8 +4,7 @@ import {
   Image, Modal, ActivityIndicator, RefreshControl, Alert,
   StatusBar, Dimensions, Platform, Animated, KeyboardAvoidingView,
   ScrollView,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+} from 'react-native';import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -185,20 +184,26 @@ const cp = StyleSheet.create({
 });
 
 // ── Comments Modal ────────────────────────────────────────────────────────────
-function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated }) {
-  const [text, setText]       = useState('');
-  const [loading, setLoading] = useState(false);
+function CommentsModal({ visible, post, onClose, token, currentUserId, isAdmin, onUpdated }) {
+  const [text, setText]         = useState('');
+  const [loading, setLoading]   = useState(false);
   const [comments, setComments] = useState(post?.comments || []);
-  const [warning, setWarning] = useState('');
+  const [warning, setWarning]   = useState('');
+  const [replyTo, setReplyTo]   = useState(null); // { commentId, username }
+  const [replyText, setReplyText] = useState('');
+  const [replyLoading, setReplyLoading] = useState(false);
 
-  useEffect(() => { setComments(post?.comments || []); setWarning(''); }, [post]);
+  useEffect(() => { setComments(post?.comments || []); setWarning(''); setReplyTo(null); }, [post]);
 
   const submit = async () => {
     if (!text.trim()) return;
     setWarning('');
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/forum/posts/${post._id}/comments`, {
+      const url = isAdmin
+        ? `${API_BASE_URL}/forum/admin/posts/${post._id}/comments`
+        : `${API_BASE_URL}/forum/posts/${post._id}/comments`;
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ text: text.trim() }),
@@ -206,13 +211,9 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated
       const data = await res.json();
       if (!res.ok) {
         if (res.status === 400 && data.error?.toLowerCase().includes('inappropriate')) {
-          Alert.alert(
-            'Comment Not Allowed',
-            'Your comment could not be posted because it contains inappropriate or offensive language. Please revise it and try again.',
-            [{ text: 'Edit Comment', style: 'default' }]
-          );
+          Alert.alert('Comment Not Allowed', 'Your comment contains inappropriate language.', [{ text: 'Edit', style: 'default' }]);
         } else {
-          Alert.alert('Could Not Comment', data.error || 'Something went wrong. Please try again.');
+          Alert.alert('Could Not Comment', data.error || 'Something went wrong.');
         }
         return;
       }
@@ -223,12 +224,37 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated
     finally { setLoading(false); }
   };
 
+  const submitReply = async (commentId) => {
+    if (!replyText.trim()) return;
+    setReplyLoading(true);
+    try {
+      const url = isAdmin
+        ? `${API_BASE_URL}/forum/admin/posts/${post._id}/comments/${commentId}/replies`
+        : `${API_BASE_URL}/forum/posts/${post._id}/comments/${commentId}/replies`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ text: replyText.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        Alert.alert('Could Not Reply', data.error || 'Something went wrong.');
+        return;
+      }
+      setComments(data.comments);
+      setReplyText('');
+      setReplyTo(null);
+      onUpdated(post._id, { comments: data.comments });
+    } catch { Alert.alert('Error', 'Network error.'); }
+    finally { setReplyLoading(false); }
+  };
+
   const deleteComment = async (commentId) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/forum/posts/${post._id}/comments/${commentId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const url = isAdmin
+        ? `${API_BASE_URL}/forum/admin/posts/${post._id}/comments/${commentId}`
+        : `${API_BASE_URL}/forum/posts/${post._id}/comments/${commentId}`;
+      const res = await fetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const updated = comments.filter(c => c._id !== commentId);
         setComments(updated);
@@ -236,6 +262,27 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated
       }
     } catch {}
   };
+
+  const canDeleteComment = (item) => isAdmin || String(item.userId?._id) === String(currentUserId);
+
+  const renderReply = (r) => (
+    <View key={r._id} style={[cm.replyRow, r.isAdmin && cm.replyRowAdmin]}>
+      <View style={cm.replyAvatar}>
+        {r.userId?.profilePhoto
+          ? <Image source={{ uri: r.userId.profilePhoto }} style={cm.replyAvatarImg} />
+          : <Text style={cm.replyAvatarText}>{(r.userId?.username || 'U')[0].toUpperCase()}</Text>
+        }
+      </View>
+      <View style={[cm.replyBubble, r.isAdmin && cm.replyBubbleAdmin]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+          <Text style={cm.replyUsername}>{r.userId?.username || 'User'}</Text>
+          {r.isAdmin && <View style={cm.adminBadge}><Text style={cm.adminBadgeText}>Admin</Text></View>}
+        </View>
+        <Text style={cm.replyText}>{r.text}</Text>
+        <Text style={cm.time}>{timeAgo(r.createdAt)}</Text>
+      </View>
+    </View>
+  );
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -246,33 +293,93 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated
             <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={C.dark} /></TouchableOpacity>
           </View>
 
-          <FlatList
-            data={comments}
-            keyExtractor={c => c._id}
-            style={{ flex: 1 }}
-            contentContainerStyle={{ paddingBottom: 8 }}
-            ListEmptyComponent={<Text style={cm.empty}>No comments yet. Be the first!</Text>}
-            renderItem={({ item }) => (
-              <View style={cm.commentRow}>
-                <View style={cm.avatar}>
-                  {item.userId?.profilePhoto
-                    ? <Image source={{ uri: item.userId.profilePhoto }} style={cm.avatarImg} />
-                    : <Text style={cm.avatarText}>{(item.userId?.username || 'U')[0].toUpperCase()}</Text>
-                  }
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 8 }}>
+            {comments.length === 0 && <Text style={cm.empty}>No comments yet. Be the first!</Text>}
+            {comments.map(item => (
+              <View key={item._id}>
+                {/* Comment row */}
+                <View style={cm.commentRow}>
+                  <View style={cm.avatar}>
+                    {item.userId?.profilePhoto
+                      ? <Image source={{ uri: item.userId.profilePhoto }} style={cm.avatarImg} />
+                      : <Text style={cm.avatarText}>{(item.userId?.username || 'U')[0].toUpperCase()}</Text>
+                    }
+                  </View>
+                  <View style={[cm.bubble, item.isAdmin && cm.bubbleAdmin]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <Text style={cm.username}>{item.userId?.username || 'User'}</Text>
+                      {item.isAdmin && <View style={cm.adminBadge}><Text style={cm.adminBadgeText}>Admin</Text></View>}
+                    </View>
+                    <Text style={cm.commentText}>{item.text}</Text>
+                    <Text style={cm.time}>{timeAgo(item.createdAt)}</Text>
+                    {/* Reply + Delete actions */}
+                    <View style={cm.commentActions}>
+                      <TouchableOpacity
+                        style={cm.replyBtn}
+                        onPress={() => {
+                          setReplyTo(replyTo?.commentId === item._id ? null : { commentId: item._id, username: item.userId?.username });
+                          setReplyText('');
+                        }}
+                      >
+                        <Ionicons name="return-down-forward-outline" size={13} color={C.saddle} />
+                        <Text style={cm.replyBtnText}>Reply</Text>
+                      </TouchableOpacity>
+                      {canDeleteComment(item) && (
+                        <TouchableOpacity
+                          onPress={() => Alert.alert('Delete Comment', 'Remove this comment?', [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Delete', style: 'destructive', onPress: () => deleteComment(item._id) },
+                          ])}
+                          style={cm.replyBtn}
+                        >
+                          <Ionicons name="trash-outline" size={13} color={C.muted} />
+                          <Text style={[cm.replyBtnText, { color: C.muted }]}>Delete</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
                 </View>
-                <View style={cm.bubble}>
-                  <Text style={cm.username}>{item.userId?.username || 'User'}</Text>
-                  <Text style={cm.commentText}>{item.text}</Text>
-                  <Text style={cm.time}>{timeAgo(item.createdAt)}</Text>
-                </View>
-                {String(item.userId?._id) === String(currentUserId) && (
-                  <TouchableOpacity onPress={() => deleteComment(item._id)} style={{ padding: 4 }}>
-                    <Ionicons name="trash-outline" size={16} color={C.muted} />
-                  </TouchableOpacity>
+
+                {/* Inline reply input */}
+                {replyTo?.commentId === item._id && (
+                  <View style={cm.inlineReplyRow}>
+                    <View style={[cm.inlineReplyAvatar, !isAdmin && { backgroundColor: C.muted }]}>
+                      {isAdmin
+                        ? <Ionicons name="shield-checkmark-outline" size={14} color={C.white} />
+                        : <Text style={cm.inlineReplyAvatarText}>↩</Text>
+                      }
+                    </View>
+                    <TextInput
+                      style={[cm.inlineReplyInput, isAdmin && { borderColor: C.gold }]}
+                      placeholder={isAdmin ? `Reply as Admin to ${replyTo.username}...` : `Reply to ${replyTo.username}...`}
+                      placeholderTextColor={C.muted}
+                      value={replyText}
+                      onChangeText={setReplyText}
+                      maxLength={500}
+                      autoFocus
+                    />
+                    <TouchableOpacity
+                      style={[cm.sendBtn, !replyText.trim() && cm.sendBtnOff]}
+                      onPress={() => submitReply(item._id)}
+                      disabled={!replyText.trim() || replyLoading}
+                    >
+                      {replyLoading
+                        ? <ActivityIndicator size="small" color={C.white} />
+                        : <Ionicons name="send" size={16} color={C.white} />
+                      }
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Replies */}
+                {item.replies?.length > 0 && (
+                  <View style={cm.repliesContainer}>
+                    {item.replies.map(r => renderReply(r))}
+                  </View>
                 )}
               </View>
-            )}
-          />
+            ))}
+          </ScrollView>
 
           <View style={cm.inputRow}>
             {!!warning && (
@@ -281,25 +388,31 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated
                 <Text style={cm.warningText}>{warning}</Text>
               </View>
             )}
+            {isAdmin && (
+              <View style={cm.adminCommentBanner}>
+                <Ionicons name="shield-checkmark-outline" size={14} color="#8B4513" />
+                <Text style={cm.adminCommentBannerText}>Commenting as Admin</Text>
+              </View>
+            )}
             <View style={cm.inputInner}>
-            <TextInput
-              style={cm.input}
-              placeholder="Write a comment..."
-              placeholderTextColor={C.muted}
-              value={text}
-              onChangeText={setText}
-              maxLength={500}
-            />
-            <TouchableOpacity
-              style={[cm.sendBtn, !text.trim() && cm.sendBtnOff]}
-              onPress={submit}
-              disabled={!text.trim() || loading}
-            >
-              {loading
-                ? <ActivityIndicator size="small" color={C.white} />
-                : <Ionicons name="send" size={18} color={C.white} />
-              }
-            </TouchableOpacity>
+              <TextInput
+                style={cm.input}
+                placeholder={isAdmin ? 'Write an admin comment...' : 'Write a comment...'}
+                placeholderTextColor={C.muted}
+                value={text}
+                onChangeText={setText}
+                maxLength={500}
+              />
+              <TouchableOpacity
+                style={[cm.sendBtn, !text.trim() && cm.sendBtnOff]}
+                onPress={submit}
+                disabled={!text.trim() || loading}
+              >
+                {loading
+                  ? <ActivityIndicator size="small" color={C.white} />
+                  : <Ionicons name="send" size={18} color={C.white} />
+                }
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -310,30 +423,56 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, onUpdated
 
 const cm = StyleSheet.create({
   overlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet:       { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, height: '75%' },
+  sheet:       { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, height: '80%' },
   header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   title:       { fontSize: 16, fontWeight: '800', color: C.dark },
   empty:       { textAlign: 'center', color: C.muted, marginTop: 24, fontSize: 14 },
-  commentRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 14 },
+  commentRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 6 },
   avatar:      { width: 34, height: 34, borderRadius: 17, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   avatarImg:   { width: 34, height: 34, borderRadius: 17 },
   avatarText:  { color: C.white, fontWeight: '800', fontSize: 14 },
   bubble:      { flex: 1, backgroundColor: C.bg, borderRadius: 14, padding: 10 },
-  username:    { fontSize: 12, fontWeight: '800', color: C.saddle, marginBottom: 2 },
+  bubbleAdmin: { backgroundColor: '#FFF8E1', borderLeftWidth: 3, borderLeftColor: C.gold },
+  username:    { fontSize: 12, fontWeight: '800', color: C.saddle },
+  adminBadge:  { backgroundColor: C.gold, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
+  adminBadgeText: { fontSize: 9, fontWeight: '900', color: C.dark },
   commentText: { fontSize: 14, color: C.text, lineHeight: 20 },
   time:        { fontSize: 10, color: C.muted, marginTop: 4 },
+  commentActions: { flexDirection: 'row', gap: 12, marginTop: 6 },
+  replyBtn:    { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  replyBtnText:{ fontSize: 11, color: C.saddle, fontWeight: '700' },
+  // Inline reply input
+  inlineReplyRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 44, marginBottom: 8, marginTop: 2 },
+  inlineReplyAvatar:{ width: 26, height: 26, borderRadius: 13, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  inlineReplyAvatarText: { color: C.white, fontWeight: '800', fontSize: 13 },
+  inlineReplyInput: { flex: 1, backgroundColor: C.bg, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 7, fontSize: 13, color: C.text, borderWidth: 1, borderColor: C.gold },
+  // Replies thread
+  repliesContainer: { marginLeft: 44, marginBottom: 10, borderLeftWidth: 2, borderLeftColor: C.border, paddingLeft: 10 },
+  replyRow:         { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 },
+  replyRowAdmin:    {},
+  replyAvatar:      { width: 26, height: 26, borderRadius: 13, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  replyAvatarImg:   { width: 26, height: 26, borderRadius: 13 },
+  replyAvatarText:  { color: C.white, fontWeight: '800', fontSize: 11 },  replyBubble:      { flex: 1, backgroundColor: C.bg, borderRadius: 12, padding: 8 },
+  replyBubbleAdmin: { backgroundColor: '#FFF8E1', borderLeftWidth: 2, borderLeftColor: C.gold },
+  replyUsername:    { fontSize: 11, fontWeight: '800', color: C.saddle },
+  replyText:        { fontSize: 13, color: C.text, lineHeight: 18 },
+  // Input row
   inputRow:    { paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border },
   inputInner:  { flexDirection: 'row', gap: 10, alignItems: 'center' },
   warningBox:  { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#FFF3E0', borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: '#FFB74D' },
   warningText: { flex: 1, fontSize: 12, color: '#E65100', lineHeight: 17 },
+  adminCommentBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFF8E1', borderRadius: 8, padding: 8, marginBottom: 8, borderWidth: 1, borderColor: C.gold },
+  adminCommentBannerText: { fontSize: 12, color: C.saddle, fontWeight: '700' },
   input:       { flex: 1, backgroundColor: C.bg, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: C.text, borderWidth: 1, borderColor: C.border },
   sendBtn:     { width: 44, height: 44, borderRadius: 22, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center' },
   sendBtnOff:  { backgroundColor: C.muted },
 });
 
 // ── Post Card ─────────────────────────────────────────────────────────────────
-function PostCard({ post, currentUserId, token, onLike, onDelete, onOpenComments }) {
+function PostCard({ post, currentUserId, token, isAdmin, onLike, onDelete, onOpenComments }) {
   const isOwner = String(post.userId?._id) === String(currentUserId);
+  const canDelete = isOwner || isAdmin;
+  const [lightbox, setLightbox] = useState(null); // uri string when open
 
   // Tombstone for admin-removed posts
   if (post.isDeleted) {
@@ -361,6 +500,28 @@ function PostCard({ post, currentUserId, token, onLike, onDelete, onOpenComments
 
   return (
     <View style={pc.card}>
+      {/* Lightbox modal */}
+      <Modal visible={!!lightbox} transparent animationType="fade" onRequestClose={() => setLightbox(null)}>
+        <View style={pc.lightboxOverlay}>
+          <TouchableOpacity style={pc.lightboxClose} onPress={() => setLightbox(null)}>
+            <Ionicons name="close-circle" size={36} color={C.white} />
+          </TouchableOpacity>
+          <ScrollView
+            contentContainerStyle={pc.lightboxScroll}
+            maximumZoomScale={4}
+            minimumZoomScale={1}
+            showsVerticalScrollIndicator={false}
+            showsHorizontalScrollIndicator={false}
+          >
+            <Image
+              source={{ uri: lightbox }}
+              style={pc.lightboxImg}
+              resizeMode="contain"
+            />
+          </ScrollView>
+        </View>
+      </Modal>
+
       {/* Author row */}
       <View style={pc.authorRow}>
         <View style={pc.avatar}>
@@ -370,10 +531,17 @@ function PostCard({ post, currentUserId, token, onLike, onDelete, onOpenComments
           }
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={pc.username}>{post.userId?.username || 'User'}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={pc.username}>{post.userId?.username || 'User'}</Text>
+            {post.isAdminPost && (
+              <View style={pc.adminBadge}>
+                <Text style={pc.adminBadgeText}>Admin</Text>
+              </View>
+            )}
+          </View>
           <Text style={pc.time}>{timeAgo(post.createdAt)}</Text>
         </View>
-        {isOwner && (
+        {canDelete && (
           <TouchableOpacity onPress={confirmDelete} style={{ padding: 6 }}>
             <Ionicons name="trash-outline" size={18} color={C.muted} />
           </TouchableOpacity>
@@ -383,16 +551,21 @@ function PostCard({ post, currentUserId, token, onLike, onDelete, onOpenComments
       {/* Text */}
       {!!post.text && <Text style={pc.text}>{post.text}</Text>}
 
-      {/* Media */}
+      {/* Media — tap image to open lightbox */}
       {post.mediaUrl && post.mediaType === 'image' && (
-        <Image source={{ uri: post.mediaUrl }} style={pc.media} resizeMode="cover" />
+        <TouchableOpacity activeOpacity={0.92} onPress={() => setLightbox(post.mediaUrl)}>
+          <Image source={{ uri: post.mediaUrl }} style={pc.media} resizeMode="cover" />
+          <View style={pc.expandHint}>
+            <Ionicons name="expand-outline" size={16} color={C.white} />
+          </View>
+        </TouchableOpacity>
       )}
       {post.mediaUrl && post.mediaType === 'video' && (
         <Video
           source={{ uri: post.mediaUrl }}
           style={pc.media}
           useNativeControls
-          resizeMode="cover"
+          resizeMode="contain"
           shouldPlay={false}
         />
       )}
@@ -427,14 +600,24 @@ const pc = StyleSheet.create({
   avatarText: { color: C.white, fontWeight: '800', fontSize: 16 },
   username:   { fontSize: 14, fontWeight: '800', color: C.dark },
   time:       { fontSize: 11, color: C.muted },
+  adminBadge: { backgroundColor: C.gold, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  adminBadgeText: { fontSize: 9, fontWeight: '900', color: C.dark },
   text:       { fontSize: 15, color: C.text, lineHeight: 22, paddingHorizontal: 16, marginBottom: 10 },
-  media:      { width: '100%', height: 260, marginBottom: 10 },
+  // Responsive media — full width, auto height via aspectRatio
+  media:      { width: '100%', aspectRatio: 4 / 3, marginBottom: 10 },
+  // Expand hint overlay on image
+  expandHint: { position: 'absolute', bottom: 18, right: 10, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 14, padding: 5 },
   actions:    { flexDirection: 'row', gap: 20, paddingHorizontal: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
   actionBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionText: { fontSize: 14, color: C.muted, fontWeight: '600' },
   tombstone:  { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 4 },
   tombstoneTitle: { fontSize: 13, fontWeight: '700', color: '#F44336' },
   tombstoneReason: { fontSize: 12, color: C.muted, marginTop: 2 },
+  // Lightbox
+  lightboxOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
+  lightboxClose:   { position: 'absolute', top: 48, right: 16, zIndex: 10 },
+  lightboxScroll:  { flexGrow: 1, justifyContent: 'center', alignItems: 'center', minHeight: '100%' },
+  lightboxImg:     { width: width, height: undefined, aspectRatio: 1, maxHeight: '90%' },
 });
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
@@ -447,6 +630,7 @@ export default function CommunityForum({ navigation }) {
   const [loadingMore, setLoadingMore]   = useState(false);
   const [token, setToken]               = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [isAdmin, setIsAdmin]           = useState(false);
   const [createVisible, setCreateVisible] = useState(false);
   const [commentsPost, setCommentsPost] = useState(null);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
@@ -477,6 +661,7 @@ export default function CommunityForum({ navigation }) {
       if (stored) {
         const u = JSON.parse(stored);
         setCurrentUserId(u._id || u.id);
+        setIsAdmin((u.userType || '').toLowerCase() === 'admin');
       }
     })();
   }, []);
@@ -532,16 +717,28 @@ export default function CommunityForum({ navigation }) {
             ? { ...p, likeCount: data.likeCount, likedByMe: data.likedByMe }
             : p
         ));
+        // also sync if comments modal is open on this post
+        if (commentsPost?._id === postId) {
+          setCommentsPost(prev => ({ ...prev, likeCount: data.likeCount, likedByMe: data.likedByMe }));
+        }
       }
     } catch {}
   };
 
   const handleDelete = async (postId) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/forum/posts/${postId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // Admin can delete any post via admin endpoint
+      const post = posts.find(p => p._id === postId);
+      const isOwner = String(post?.userId?._id) === String(currentUserId);
+      const url = (!isOwner && isAdmin)
+        ? `${API_BASE_URL}/forum/admin/posts/${postId}`
+        : `${API_BASE_URL}/forum/posts/${postId}`;
+      const options = { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } };
+      if (!isOwner && isAdmin) {
+        options.headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify({ reason: 'Removed by admin' });
+      }
+      const res = await fetch(url, options);
       if (res.ok) setPosts(prev => prev.filter(p => p._id !== postId));
     } catch {}
   };
@@ -560,6 +757,7 @@ export default function CommunityForum({ navigation }) {
       post={item}
       currentUserId={currentUserId}
       token={token}
+      isAdmin={isAdmin}
       onLike={handleLike}
       onDelete={handleDelete}
       onOpenComments={(p) => setCommentsPost(p)}
@@ -658,6 +856,7 @@ export default function CommunityForum({ navigation }) {
           onClose={() => setCommentsPost(null)}
           token={token}
           currentUserId={currentUserId}
+          isAdmin={isAdmin}
           onUpdated={handlePostUpdated}
         />
       )}

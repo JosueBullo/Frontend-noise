@@ -32,6 +32,7 @@ const MapScreen = ({ navigation }) => {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [reports, setReports] = useState([]);
+  const [addresses, setAddresses] = useState({}); // key: "lat,lon" → { street, area, loading }
   const mapRef = useRef(null);
   
   // Animation refs for drawer
@@ -169,37 +170,45 @@ const MapScreen = ({ navigation }) => {
   };
 
   const handleNoiseReport = () => {
-    console.log('Noise report button pressed - navigating to Report screen');
     try {
       if (navigation && navigation.navigate) {
         navigation.navigate('Report', { 
-          currentLocation: region ? {
-            latitude: region.latitude,
-            longitude: region.longitude
-          } : null
+          currentLocation: region ? { latitude: region.latitude, longitude: region.longitude } : null
         });
-      } else {
-        console.warn('Navigation not available');
-        Alert.alert("Navigation Error", "Report screen not available");
       }
-    } catch (error) {
-      console.error('Report navigation error:', error);
-      Alert.alert("Navigation Error", "Could not open report screen");
-    }
+    } catch {}
   };
 
   const handleSettingsPress = () => {
-    console.log('Settings button pressed - navigating to Settings');
     try {
-      if (navigation && navigation.navigate) {
-        navigation.navigate('Settings');
-      } else {
-        console.warn('Navigation not available');
-        Alert.alert("Navigation Error", "Settings screen not available");
-      }
-    } catch (error) {
-      console.error('Settings navigation error:', error);
-      Alert.alert("Navigation Error", "Could not open settings");
+      if (navigation && navigation.navigate) navigation.navigate('Settings');
+    } catch {}
+  };
+
+  // Reverse geocode via Nominatim — called when user taps a callout
+  const geocodeCache = useRef({});
+  const fetchAddress = async (lat, lon) => {
+    const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+    if (geocodeCache.current[key]) return; // already fetched
+    setAddresses(prev => ({ ...prev, [key]: { street: '', area: '', loading: true } }));
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await res.json();
+      const a = data.address || {};
+      const street = [a.road || a.pedestrian || a.footway || a.path || 'Unknown street', a.house_number || '']
+        .filter(Boolean).join(' ');
+      const area = [a.suburb || a.neighbourhood || a.village || a.town || '', a.city || a.municipality || '']
+        .filter(Boolean).join(', ');
+      const result = { street, area, loading: false };
+      geocodeCache.current[key] = result;
+      setAddresses(prev => ({ ...prev, [key]: result }));
+    } catch {
+      const result = { street: 'Address unavailable', area: '', loading: false };
+      geocodeCache.current[key] = result;
+      setAddresses(prev => ({ ...prev, [key]: result }));
     }
   };
 
@@ -264,9 +273,6 @@ const MapScreen = ({ navigation }) => {
             <Ionicons name="menu" size={28} color="#D4AC0D" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Noise Map</Text>
-          <TouchableOpacity onPress={handleSettingsPress} style={styles.settingsButton}>
-            <Ionicons name="settings" size={28} color="#D4AC0D" />
-          </TouchableOpacity>
         </View>
       </LinearGradient>
 
@@ -315,28 +321,50 @@ const MapScreen = ({ navigation }) => {
                 />
                 
                 {/* Pin Marker */}
-                // In your Marker component, change this:
-<Marker
-  coordinate={{ latitude: lat, longitude: lon }}
-  pinColor={markerStyle.color}
->
-  <View style={styles.markerContainer}>
-    <View style={[styles.markerCircle, { backgroundColor: markerStyle.color }]}>
-      <Text style={styles.markerText}>{count}</Text>
-    </View>
-    <View style={[styles.markerTriangle, { borderTopColor: markerStyle.color }]} />
-  </View>
-  {/* FIXED: Changed from MapView.Callout to Callout */}
-  <Callout>
-    <View style={styles.calloutContainer}>
-      <Text style={styles.calloutTitle}>{markerStyle.label} Noise Level</Text>
-      <Text style={styles.calloutText}>{count} Report{count > 1 ? 's' : ''}</Text>
-      <Text style={styles.calloutDescription}>
-        This location has received {count} noise complaint{count > 1 ? 's' : ''}
-      </Text>
-    </View>
-  </Callout>
-</Marker>
+                <Marker
+                  coordinate={{ latitude: lat, longitude: lon }}
+                  pinColor={markerStyle.color}
+                  onPress={() => fetchAddress(lat, lon)}
+                >
+                  <View style={styles.markerContainer}>
+                    <View style={[styles.markerCircle, { backgroundColor: markerStyle.color }]}>
+                      <Text style={styles.markerText}>{count}</Text>
+                    </View>
+                    <View style={[styles.markerTriangle, { borderTopColor: markerStyle.color }]} />
+                  </View>
+                  <Callout tooltip={false}>
+                    {(() => {
+                      const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+                      const addr = addresses[key];
+                      return (
+                        <View style={styles.calloutContainer}>
+                          {/* Address row */}
+                          <View style={styles.calloutAddressRow}>
+                            <Text style={styles.calloutAddressIcon}>📍</Text>
+                            <View style={{ flex: 1 }}>
+                              {!addr ? (
+                                <Text style={styles.calloutAddressLoading}>Tap to load address...</Text>
+                              ) : addr.loading ? (
+                                <Text style={styles.calloutAddressLoading}>Fetching address...</Text>
+                              ) : (
+                                <>
+                                  <Text style={styles.calloutStreet}>{addr.street}</Text>
+                                  {!!addr.area && <Text style={styles.calloutArea}>{addr.area}</Text>}
+                                </>
+                              )}
+                            </View>
+                          </View>
+                          <View style={styles.calloutDivider} />
+                          <Text style={styles.calloutTitle}>{markerStyle.label} Noise Level</Text>
+                          <Text style={styles.calloutText}>{count} Report{count > 1 ? 's' : ''}</Text>
+                          <Text style={styles.calloutDescription}>
+                            This location has received {count} noise complaint{count > 1 ? 's' : ''}
+                          </Text>
+                        </View>
+                      );
+                    })()}
+                  </Callout>
+                </Marker>
               </React.Fragment>
             );
           })}
@@ -367,15 +395,11 @@ const MapScreen = ({ navigation }) => {
       {/* Floating Action Buttons */}
       <View style={styles.fabContainer}>
         <TouchableOpacity 
-          style={[styles.fab, { marginBottom: 10, opacity: permissionDenied ? 0.5 : 1 }]} 
+          style={[styles.fab, { opacity: permissionDenied ? 0.5 : 1 }]} 
           onPress={handleRecenterMap}
           disabled={permissionDenied}
         >
           <Ionicons name="locate" size={24} color="#8B4513" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.fab} onPress={handleNoiseReport}>
-          <Ionicons name="volume-high" size={24} color="#8B4513" />
         </TouchableOpacity>
       </View>
 
@@ -488,6 +512,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
   },
+  // Address styles
+  calloutAddressRow:     { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginBottom: 8 },
+  calloutAddressIcon:    { fontSize: 16, marginTop: 1 },
+  calloutStreet:         { fontSize: 14, fontWeight: '800', color: '#3E2C23', lineHeight: 18 },
+  calloutArea:           { fontSize: 11, color: '#8B7355', marginTop: 2 },
+  calloutAddressLoading: { fontSize: 12, color: '#A89070', fontStyle: 'italic' },
+  calloutDivider:        { height: 1, backgroundColor: '#E8DDD0', marginBottom: 8 },
   legendContainer: {
     position: 'absolute',
     top: 16,
@@ -548,7 +579,7 @@ const styles = StyleSheet.create({
   },
   fabContainer: {
     position: 'absolute',
-    right: 16,
+    left: 16,
     bottom: 24,
     alignItems: 'center',
   },
