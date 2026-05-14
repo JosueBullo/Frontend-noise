@@ -133,6 +133,7 @@ const CustomDrawer = ({ navigation, onClose }) => {
     { id: '5', title: 'Export Reports',        icon: 'download-outline',      route: 'ExportReports'       },
     { id: '6', title: 'Notifications & Alerts',icon: 'alert-circle-outline',  route: 'AdminNotifications'  },
     { id: '7', title: 'Forum Moderation',      icon: 'shield-checkmark-outline', route: 'ForumModerationAdmin' },
+    { id: '8', title: 'Devices',               icon: 'hardware-chip-outline',    route: 'DeviceManagement' },
   ];
 
   const userBottomItems  = [{ id: '7', title: 'Heatmaps', icon: 'map-outline', route: 'MapScreen' }];
@@ -228,7 +229,7 @@ const CustomDrawer = ({ navigation, onClose }) => {
     'Record', 'NoiseReports', 'ReportHistory', 'Analytics',
     'ExportReports', 'AdminNotifications', 'AdminProfile',
     'Notifications', 'PersonalAnalytics', 'NoiseHealthExposure',
-    'CommunityForum', 'ForumModerationAdmin',
+    'CommunityForum', 'ForumModerationAdmin', 'DeviceManagement',
   ];
 
   const handleNavigation = (route) => {
