@@ -25,6 +25,7 @@ import CommunityForum from './Pages/CommunityForum';
 import PersonalAnalytics from './Pages/User/PersonalAnalytics';
 import UserNotifications from './Pages/User/Notifications';
 import ForumModerationAdmin from './Pages/Admin/ForumModeration';
+import DeviceManagementAdmin from './Pages/Admin/DeviceManagement';
 
 const Stack = createStackNavigator();
 
@@ -130,6 +131,12 @@ export default function App() {
           <Stack.Screen
             name="ForumModerationAdmin"
             component={ForumModerationAdmin}
+            options={{ headerShown: false, gestureEnabled: true }}
+          />
+
+          <Stack.Screen
+            name="DeviceManagement"
+            component={DeviceManagementAdmin}
             options={{ headerShown: false, gestureEnabled: true }}
           />
 
