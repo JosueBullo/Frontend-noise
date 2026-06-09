@@ -13,7 +13,7 @@ import {
   Text,
   Alert,
 } from "react-native";
-import MapView, { Marker, Circle, Callout} from 'react-native-maps';
+import MapView, { Marker, Circle, Callout } from 'react-native-maps';
 import * as Location from "expo-location";
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,7 +34,7 @@ const MapScreen = ({ navigation }) => {
   const [reports, setReports] = useState([]);
   const [addresses, setAddresses] = useState({}); // key: "lat,lon" → { street, area, loading }
   const mapRef = useRef(null);
-  
+
   // Animation refs for drawer
   const slideAnim = useRef(new Animated.Value(-width * 0.8)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -56,7 +56,7 @@ const MapScreen = ({ navigation }) => {
       }
     };
     fetchMapData();
-    
+
     // Refresh data every 30 seconds
     const interval = setInterval(fetchMapData, 30000);
     return () => clearInterval(interval);
@@ -82,7 +82,7 @@ const MapScreen = ({ navigation }) => {
         const location = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.High,
         });
-        
+
         setRegion({
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
@@ -149,16 +149,16 @@ const MapScreen = ({ navigation }) => {
       const current = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
-      
+
       const newRegion = {
         latitude: current.coords.latitude,
         longitude: current.coords.longitude,
         latitudeDelta: 0.05,
         longitudeDelta: 0.05,
       };
-      
+
       setRegion(newRegion);
-      
+
       // Animate to new region
       if (mapRef.current) {
         mapRef.current.animateToRegion(newRegion, 1000);
@@ -172,17 +172,17 @@ const MapScreen = ({ navigation }) => {
   const handleNoiseReport = () => {
     try {
       if (navigation && navigation.navigate) {
-        navigation.navigate('Report', { 
+        navigation.navigate('Report', {
           currentLocation: region ? { latitude: region.latitude, longitude: region.longitude } : null
         });
       }
-    } catch {}
+    } catch { }
   };
 
   const handleSettingsPress = () => {
     try {
       if (navigation && navigation.navigate) navigation.navigate('Settings');
-    } catch {}
+    } catch { }
   };
 
   // Reverse geocode via Nominatim — called when user taps a callout
@@ -265,7 +265,7 @@ const MapScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#8B4513" translucent={false} />
-      
+
       {/* Header */}
       <LinearGradient colors={['#8B4513', '#654321']} style={styles.header}>
         <View style={styles.headerContent}>
@@ -299,9 +299,9 @@ const MapScreen = ({ navigation }) => {
             const count = item.count || 1;
 
             // Validate coordinates
-            if (typeof lat !== 'number' || typeof lon !== 'number' || 
-                isNaN(lat) || isNaN(lon) ||
-                lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+            if (typeof lat !== 'number' || typeof lon !== 'number' ||
+              isNaN(lat) || isNaN(lon) ||
+              lat < -90 || lat > 90 || lon < -180 || lon > 180) {
               console.warn('Invalid coordinates:', { lat, lon });
               return null;
             }
@@ -319,7 +319,7 @@ const MapScreen = ({ navigation }) => {
                   strokeWidth={2}
                   fillOpacity={markerStyle.opacity}
                 />
-                
+
                 {/* Pin Marker */}
                 <Marker
                   coordinate={{ latitude: lat, longitude: lon }}
@@ -394,8 +394,8 @@ const MapScreen = ({ navigation }) => {
 
       {/* Floating Action Buttons */}
       <View style={styles.fabContainer}>
-        <TouchableOpacity 
-          style={[styles.fab, { opacity: permissionDenied ? 0.5 : 1 }]} 
+        <TouchableOpacity
+          style={[styles.fab, { opacity: permissionDenied ? 0.5 : 1 }]}
           onPress={handleRecenterMap}
           disabled={permissionDenied}
         >
@@ -404,19 +404,19 @@ const MapScreen = ({ navigation }) => {
       </View>
 
       {/* Drawer Modal */}
-      <Modal 
-        visible={drawerVisible} 
-        transparent 
-        animationType="none" 
+      <Modal
+        visible={drawerVisible}
+        transparent
+        animationType="none"
         onRequestClose={closeDrawer}
         statusBarTranslucent
       >
         <View style={styles.modalContainer}>
           <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]}>
-            <TouchableOpacity 
-              style={{ flex: 1 }} 
-              activeOpacity={1} 
-              onPress={closeDrawer} 
+            <TouchableOpacity
+              style={{ flex: 1 }}
+              activeOpacity={1}
+              onPress={closeDrawer}
             />
           </Animated.View>
           <Animated.View style={[styles.drawerContainer, { transform: [{ translateX: slideAnim }] }]}>
@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
- markerContainer: {
+  markerContainer: {
     alignItems: 'center',
   },
   markerCircle: {
@@ -513,12 +513,12 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   // Address styles
-  calloutAddressRow:     { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginBottom: 8 },
-  calloutAddressIcon:    { fontSize: 16, marginTop: 1 },
-  calloutStreet:         { fontSize: 14, fontWeight: '800', color: '#3E2C23', lineHeight: 18 },
-  calloutArea:           { fontSize: 11, color: '#8B7355', marginTop: 2 },
+  calloutAddressRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginBottom: 8 },
+  calloutAddressIcon: { fontSize: 16, marginTop: 1 },
+  calloutStreet: { fontSize: 14, fontWeight: '800', color: '#3E2C23', lineHeight: 18 },
+  calloutArea: { fontSize: 11, color: '#8B7355', marginTop: 2 },
   calloutAddressLoading: { fontSize: 12, color: '#A89070', fontStyle: 'italic' },
-  calloutDivider:        { height: 1, backgroundColor: '#E8DDD0', marginBottom: 8 },
+  calloutDivider: { height: 1, backgroundColor: '#E8DDD0', marginBottom: 8 },
   legendContainer: {
     position: 'absolute',
     top: 16,

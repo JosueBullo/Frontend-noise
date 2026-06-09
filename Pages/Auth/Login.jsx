@@ -169,6 +169,11 @@ export default function Login({ navigation }) {
       const status = e.response?.status;
       const serverMsg = e.response?.data?.message;
 
+      if (status === 403 && e.response?.data?.isDeactivated) {
+        navigation.navigate('DeactivatedScreen', { reason: e.response.data.deactivationReason });
+        return;
+      }
+
       let title = 'Login Failed';
       let msg = 'Something went wrong. Please try again.';
 

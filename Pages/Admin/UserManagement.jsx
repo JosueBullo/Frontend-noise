@@ -40,6 +40,98 @@ const UserManagement = ({ setShowUserModal }) => {
     status: []
   });
 
+  // User Modal & Report History state
+  const [selectedUserForModal, setSelectedUserForModal] = useState(null);
+  const [userReports, setUserReports] = useState([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsError, setReportsError] = useState(null);
+  const [reportsPage, setReportsPage] = useState(1);
+  const reportsPerPage = 5;
+  const [showDeactivatePrompt, setShowDeactivatePrompt] = useState(false);
+  const [deactivateReasonType, setDeactivateReasonType] = useState('spam');
+  const [customDeactivateReason, setCustomDeactivateReason] = useState('');
+  const [processing, setProcessing] = useState(false);
+
+  const fetchUserReports = async (userId) => {
+    try {
+      setReportsLoading(true);
+      setReportsError(null);
+      const response = await fetch(`${API_BASE_URL}/reports/get-user-report/${userId}`);
+      if (!response.ok) throw new Error('Failed to fetch user reports');
+      const data = await response.json();
+      setUserReports(data.reports || []);
+    } catch (err) {
+      setReportsError(err.message);
+      setUserReports([]);
+    } finally {
+      setReportsLoading(false);
+    }
+  };
+
+  const deactivateUser = async (userId, reason) => {
+    try {
+      setProcessing(true);
+      const response = await fetch(`${API_BASE_URL}/user/deactivate/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setUsers(prevUsers => prevUsers.map(u => 
+          (u._id === userId || u.id === userId) ? { ...u, isDeactivated: true, deactivationReason: reason } : u
+        ));
+        if (selectedUserForModal && (selectedUserForModal._id === userId || selectedUserForModal.id === userId)) {
+          setSelectedUserForModal(prev => ({ ...prev, isDeactivated: true, deactivationReason: reason }));
+        }
+        setShowDeactivatePrompt(false);
+        Alert.alert('Success', `User deactivated. Reason: ${reason}`);
+      } else {
+        throw new Error(data.message || 'Deactivation failed');
+      }
+    } catch (err) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const activateUser = async (userId) => {
+    try {
+      setProcessing(true);
+      const response = await fetch(`${API_BASE_URL}/user/activate/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setUsers(prevUsers => prevUsers.map(u => 
+          (u._id === userId || u.id === userId) ? { ...u, isDeactivated: false, deactivationReason: null } : u
+        ));
+        if (selectedUserForModal && (selectedUserForModal._id === userId || selectedUserForModal.id === userId)) {
+          setSelectedUserForModal(prev => ({ ...prev, isDeactivated: false, deactivationReason: null }));
+        }
+        Alert.alert('Success', 'User activated successfully.');
+      } else {
+        throw new Error(data.message || 'Activation failed');
+      }
+    } catch (err) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const openUserDetailModal = (user) => {
+    setSelectedUserForModal(user);
+    setReportsPage(1);
+    fetchUserReports(user._id || user.id);
+  };
+
   // Drawer animations
   const openDrawer = () => {
     setDrawerVisible(true);
@@ -141,9 +233,9 @@ const UserManagement = ({ setShowUserModal }) => {
           return [baseStyle, styles.badgeGray];
       }
     } else if (type === 'status') {
-      return value === 'active' 
-        ? [baseStyle, styles.badgeGreen]
-        : [baseStyle, styles.badgeOrange];
+      if (value === 'active') return [baseStyle, styles.badgeGreen];
+      if (value === 'deactivated') return [baseStyle, styles.badgeRed];
+      return [baseStyle, styles.badgeOrange];
     }
     
     return baseStyle;
@@ -160,9 +252,9 @@ const UserManagement = ({ setShowUserModal }) => {
           return styles.badgeGrayText;
       }
     } else if (type === 'status') {
-      return value === 'active' 
-        ? styles.badgeGreenText
-        : styles.badgeOrangeText;
+      if (value === 'active') return styles.badgeGreenText;
+      if (value === 'deactivated') return styles.badgeRedText;
+      return styles.badgeOrangeText;
     }
     
     return styles.badgeGrayText;
@@ -205,7 +297,7 @@ const UserManagement = ({ setShowUserModal }) => {
             
             <View style={styles.filterSection}>
               <Text style={styles.filterSectionTitle}>Status</Text>
-              {['active', 'inactive'].map(status => (
+              {['active', 'inactive', 'deactivated'].map(status => (
                 <FilterOption
                   key={status}
                   label={status}
@@ -264,31 +356,35 @@ const UserManagement = ({ setShowUserModal }) => {
     );
   };
 
-  const renderUserItem = ({ item }) => (
-    <View style={styles.userRow}>
-      <View style={styles.userInfo}>
-        <Text style={styles.userName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.userEmail} numberOfLines={1}>{item.email}</Text>
-      </View>
-      <View style={styles.userMeta}>
-        <View style={styles.badgeRow}>
-          <View style={getBadgeStyle('userType', item.userType)}>
-            <Text style={[styles.badgeText, getBadgeTextStyle('userType', item.userType)]}>
-              {item.userType}
-            </Text>
-          </View>
-          <View style={getBadgeStyle('status', item.status || 'active')}>
-            <Text style={[styles.badgeText, getBadgeTextStyle('status', item.status || 'active')]}>
-              {item.status || 'active'}
-            </Text>
-          </View>
+  const renderUserItem = ({ item }) => {
+    const status = item.isDeactivated ? 'deactivated' : (item.isVerified ? 'active' : 'inactive');
+
+    return (
+      <TouchableOpacity style={styles.userRow} onPress={() => openUserDetailModal(item)}>
+        <View style={styles.userInfo}>
+          <Text style={styles.userName} numberOfLines={1}>{item.name || item.username}</Text>
+          <Text style={styles.userEmail} numberOfLines={1}>{item.email}</Text>
         </View>
-        <Text style={styles.joinDate}>
-          {new Date(item.createdAt).toLocaleDateString()}
-        </Text>
-      </View>
-    </View>
-  );
+        <View style={styles.userMeta}>
+          <View style={styles.badgeRow}>
+            <View style={getBadgeStyle('userType', item.userType)}>
+              <Text style={[styles.badgeText, getBadgeTextStyle('userType', item.userType)]}>
+                {item.userType}
+              </Text>
+            </View>
+            <View style={getBadgeStyle('status', status)}>
+              <Text style={[styles.badgeText, getBadgeTextStyle('status', status)]}>
+                {status}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.joinDate}>
+            {new Date(item.createdAt).toLocaleDateString()}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
@@ -301,6 +397,276 @@ const UserManagement = ({ setShowUserModal }) => {
       </Text>
     </View>
   );
+
+  const UserDetailModal = () => {
+    if (!selectedUserForModal) return null;
+
+    const user = selectedUserForModal;
+    const isDeactivated = user.isDeactivated;
+    const status = isDeactivated ? 'deactivated' : (user.isVerified ? 'active' : 'inactive');
+
+    const startIndex = (reportsPage - 1) * reportsPerPage;
+    const paginatedReports = userReports.slice(startIndex, startIndex + reportsPerPage);
+    const totalPages = Math.ceil(userReports.length / reportsPerPage) || 1;
+
+    return (
+      <Modal
+        visible={true}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setSelectedUserForModal(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.detailModalContent}>
+            <View style={styles.detailModalHeader}>
+              <Text style={styles.detailModalTitle}>User Details</Text>
+              <TouchableOpacity onPress={() => setSelectedUserForModal(null)}>
+                <Ionicons name="close" size={24} color="#8B4513" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.detailModalScroll} showsVerticalScrollIndicator={false}>
+              {/* User summary */}
+              <View style={styles.detailUserSummary}>
+                <View style={styles.detailAvatarContainer}>
+                  {user.profilePhoto ? (
+                    <Image source={{ uri: user.profilePhoto }} style={styles.detailAvatar} />
+                  ) : (
+                    <View style={styles.detailAvatarPlaceholder}>
+                      <Text style={styles.detailAvatarPlaceholderText}>
+                        {(user.username || user.name || 'U').charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.detailUserInfo}>
+                  <Text style={styles.detailUserName}>{user.username || user.name}</Text>
+                  <Text style={styles.detailUserEmail}>{user.email}</Text>
+                  <View style={styles.detailBadgesRow}>
+                    <View style={getBadgeStyle('userType', user.userType)}>
+                      <Text style={[styles.badgeText, getBadgeTextStyle('userType', user.userType)]}>
+                        {user.userType}
+                      </Text>
+                    </View>
+                    <View style={getBadgeStyle('status', status)}>
+                      <Text style={[styles.badgeText, getBadgeTextStyle('status', status)]}>
+                        {status}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.detailJoinedText}>
+                    Joined: {new Date(user.createdAt).toLocaleDateString()}
+                  </Text>
+                </View>
+              </View>
+
+              {isDeactivated && (
+                <View style={styles.suspendedNoticeBox}>
+                  <Ionicons name="warning" size={20} color="#EF4444" style={styles.suspendedNoticeIcon} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.suspendedNoticeTitle}>Suspended Account</Text>
+                    <Text style={styles.suspendedNoticeReason}>Reason: {user.deactivationReason || 'No reason provided.'}</Text>
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.detailDivider} />
+
+              {/* Report history */}
+              <View style={styles.detailReportsSection}>
+                <Text style={styles.detailReportsTitle}>
+                  Report History ({userReports.length})
+                </Text>
+
+                {reportsLoading ? (
+                  <ActivityIndicator size="small" color="#8B4513" style={{ marginVertical: 20 }} />
+                ) : reportsError ? (
+                  <Text style={styles.detailReportsError}>{reportsError}</Text>
+                ) : userReports.length === 0 ? (
+                  <Text style={styles.detailReportsEmpty}>No reports submitted by this user.</Text>
+                ) : (
+                  <View>
+                    {paginatedReports.map((report) => (
+                      <View key={report._id} style={styles.detailReportItem}>
+                        <View style={styles.detailReportHeader}>
+                          <View style={[styles.detailReportLevelDot, { 
+                            backgroundColor: report.noiseLevel === 'green' ? '#10B981' : 
+                                            report.noiseLevel === 'yellow' ? '#F59E0B' : 
+                                            report.noiseLevel === 'red' ? '#EF4444' : '#8B5CF6' 
+                          }]} />
+                          <Text style={styles.detailReportReason} numberOfLines={1}>
+                            {report.reason || 'Noise Report'}
+                          </Text>
+                          <Text style={styles.detailReportDate}>
+                            {new Date(report.createdAt).toLocaleDateString()}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 14, marginTop: 4, marginBottom: 2, flexWrap: 'wrap' }}>
+                          {report.averageDecibel ? (
+                            <Text style={{ fontSize: 12, color: '#666', fontWeight: '500' }}>🔊 {report.averageDecibel} dB</Text>
+                          ) : null}
+                          {(() => {
+                            const isReportable = report.isReportable != null ? report.isReportable : ((report.aiSummary && report.aiSummary.reportableCount) || 0) > 0;
+                            return (
+                              <View style={[
+                                styles.reportMiniBadge,
+                                isReportable ? styles.reportMiniBadgeReportable : styles.reportMiniBadgeNotReportable
+                              ]}>
+                                <Text style={[
+                                  styles.reportMiniBadgeText,
+                                  isReportable ? styles.reportMiniBadgeTextReportable : styles.reportMiniBadgeTextNotReportable
+                                ]}>
+                                  {isReportable ? '⚡ Reportable' : '🚫 Not Reportable'}
+                                </Text>
+                              </View>
+                            );
+                          })()}
+                        </View>
+                        {report.comment ? (
+                          <Text style={styles.detailReportComment} numberOfLines={2}>
+                            "{report.comment}"
+                          </Text>
+                        ) : null}
+                      </View>
+                    ))}
+
+                    {totalPages > 1 && (
+                      <View style={styles.detailPaginationRow}>
+                        <TouchableOpacity 
+                          style={[styles.paginationArrow, reportsPage === 1 && styles.paginationArrowDisabled]}
+                          disabled={reportsPage === 1}
+                          onPress={() => setReportsPage(prev => Math.max(1, prev - 1))}
+                        >
+                          <Ionicons name="chevron-back" size={16} color={reportsPage === 1 ? '#CCC' : '#8B4513'} />
+                        </TouchableOpacity>
+                        <Text style={styles.paginationText}>Page {reportsPage} of {totalPages}</Text>
+                        <TouchableOpacity 
+                          style={[styles.paginationArrow, reportsPage === totalPages && styles.paginationArrowDisabled]}
+                          disabled={reportsPage === totalPages}
+                          onPress={() => setReportsPage(prev => Math.min(totalPages, prev + 1))}
+                        >
+                          <Ionicons name="chevron-forward" size={16} color={reportsPage === totalPages ? '#CCC' : '#8B4513'} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+            </ScrollView>
+
+            <View style={styles.detailModalActions}>
+              {!isDeactivated ? (
+                <TouchableOpacity 
+                  style={styles.btnDeactivateLarge}
+                  onPress={() => {
+                    setDeactivateReasonType('spam');
+                    setCustomDeactivateReason('');
+                    setShowDeactivatePrompt(true);
+                  }}
+                >
+                  <Ionicons name="ban" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.btnDeactivateLargeText}>Deactivate User</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity 
+                  style={styles.btnActivateLarge}
+                  onPress={() => activateUser(user._id || user.id)}
+                  disabled={processing}
+                >
+                  <Ionicons name="checkmark-circle" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.btnActivateLargeText}>Reactivate User</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity 
+                style={styles.btnTextLarge}
+                onPress={() => setSelectedUserForModal(null)}
+              >
+                <Text style={styles.btnTextLargeText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Inner Deactivation Prompt Modal */}
+            {showDeactivatePrompt && (
+              <Modal
+                visible={true}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowDeactivatePrompt(false)}
+              >
+                <TouchableOpacity 
+                  style={styles.promptOverlay}
+                  activeOpacity={1}
+                  onPress={() => setShowDeactivatePrompt(false)}
+                >
+                  <View style={styles.promptContent} onStartShouldSetResponder={() => true}>
+                    <Text style={styles.promptTitle}>Deactivate User</Text>
+                    <Text style={styles.promptSubtitle}>Select suspension reason:</Text>
+                    
+                    <View style={styles.promptOptions}>
+                      {[
+                        { key: 'spam', label: 'Spamming of reports' },
+                        { key: 'warning', label: 'Frequent warnings on the forum' },
+                        { key: 'custom', label: 'Other (Please specify)' }
+                      ].map(opt => (
+                        <TouchableOpacity 
+                          key={opt.key} 
+                          style={styles.promptRadioOption}
+                          onPress={() => setDeactivateReasonType(opt.key)}
+                        >
+                          <View style={styles.promptRadioOuter}>
+                            {deactivateReasonType === opt.key && <View style={styles.promptRadioInner} />}
+                          </View>
+                          <Text style={styles.promptRadioLabel}>{opt.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+
+                      {deactivateReasonType === 'custom' && (
+                        <TextInput
+                          style={styles.promptCustomTextarea}
+                          placeholder="Enter custom deactivation reason..."
+                          placeholderTextColor="#999"
+                          multiline={true}
+                          numberOfLines={3}
+                          value={customDeactivateReason}
+                          onChangeText={setCustomDeactivateReason}
+                        />
+                      )}
+                    </View>
+
+                    <View style={styles.promptActionsRow}>
+                      <TouchableOpacity 
+                        style={styles.btnText}
+                        onPress={() => setShowDeactivatePrompt(false)}
+                      >
+                        <Text style={styles.btnTextLabel}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={[styles.btnConfirmDeactivate, processing || (deactivateReasonType === 'custom' && !customDeactivateReason.trim()) ? styles.btnDisabled : null]}
+                        disabled={processing || (deactivateReasonType === 'custom' && !customDeactivateReason.trim())}
+                        onPress={() => {
+                          let reasonText = 'Spamming of reports';
+                          if (deactivateReasonType === 'warning') {
+                            reasonText = 'Frequent warnings on the forum';
+                          } else if (deactivateReasonType === 'custom') {
+                            reasonText = customDeactivateReason.trim();
+                          }
+                          deactivateUser(user._id || user.id, reasonText);
+                        }}
+                      >
+                        <Text style={styles.btnConfirmDeactivateText}>
+                          {processing ? 'Processing...' : 'Confirm'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              </Modal>
+            )}
+          </View>
+        </View>
+      </Modal>
+    );
+  };
 
   if (loading) {
     return (
@@ -382,6 +748,7 @@ const UserManagement = ({ setShowUserModal }) => {
       </View>
 
       <FilterModal />
+      <UserDetailModal />
 
       {/* Custom Drawer */}
       <Modal visible={drawerVisible} transparent animationType="none" onRequestClose={closeDrawer}>
@@ -792,6 +1159,392 @@ const styles = StyleSheet.create({
   },
   emptyListContainer: {
     flex: 1,
+  },
+  badgeRed: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#EF4444',
+  },
+  badgeRedText: {
+    color: '#B91C1C',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  detailModalContent: {
+    backgroundColor: '#FFF',
+    borderRadius: 24,
+    width: '90%',
+    maxHeight: '80%',
+    borderWidth: 2,
+    borderColor: '#D4AC0D',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  detailModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#FAF5F0',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EAE6DF',
+  },
+  detailModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#8B4513',
+  },
+  detailModalScroll: {
+    padding: 20,
+  },
+  detailUserSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 16,
+  },
+  detailAvatarContainer: {
+    position: 'relative',
+  },
+  detailAvatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    borderWidth: 2,
+    borderColor: '#D4AC0D',
+  },
+  detailAvatarPlaceholder: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#8B4513',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#D4AC0D',
+  },
+  detailAvatarPlaceholderText: {
+    color: '#FFF',
+    fontSize: 28,
+    fontWeight: 'bold',
+  },
+  detailUserInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  detailUserName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  detailUserEmail: {
+    fontSize: 14,
+    color: '#666',
+  },
+  detailBadgesRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  detailJoinedText: {
+    fontSize: 11,
+    color: '#999',
+    marginTop: 4,
+  },
+  suspendedNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderLeftWidth: 4,
+    borderLeftColor: '#EF4444',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 10,
+    gap: 8,
+  },
+  suspendedNoticeIcon: {
+    marginTop: 2,
+  },
+  suspendedNoticeTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#991B1B',
+  },
+  suspendedNoticeReason: {
+    fontSize: 13,
+    color: '#7F1D1D',
+    marginTop: 2,
+    lineHeight: 18,
+  },
+  detailDivider: {
+    height: 1,
+    backgroundColor: '#EAE6DF',
+    marginVertical: 16,
+  },
+  detailReportsSection: {
+    gap: 12,
+  },
+  detailReportsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#8B4513',
+    marginBottom: 8,
+  },
+  detailReportsError: {
+    color: '#EF4444',
+    fontSize: 14,
+    textAlign: 'center',
+    padding: 16,
+  },
+  detailReportsEmpty: {
+    color: '#666',
+    fontSize: 14,
+    textAlign: 'center',
+    padding: 16,
+    backgroundColor: '#FAF9F6',
+    borderRadius: 10,
+  },
+  detailReportItem: {
+    backgroundColor: '#FAF9F6',
+    borderWidth: 1,
+    borderColor: '#EAE6DF',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    gap: 4,
+  },
+  detailReportHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  detailReportLevelDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  detailReportReason: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+  },
+  detailReportDate: {
+    fontSize: 11,
+    color: '#999',
+  },
+  detailReportMeta: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 14,
+  },
+  detailReportComment: {
+    fontSize: 13,
+    color: '#555',
+    fontStyle: 'italic',
+    marginLeft: 14,
+    marginTop: 2,
+  },
+  detailPaginationRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+  },
+  paginationArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#D4AC0D',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+  },
+  paginationArrowDisabled: {
+    opacity: 0.4,
+    borderColor: '#CCC',
+  },
+  paginationText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#666',
+  },
+  detailModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#FAF5F0',
+    borderTopWidth: 1,
+    borderTopColor: '#EAE6DF',
+    gap: 12,
+  },
+  btnDeactivateLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EF4444',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  btnDeactivateLargeText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  btnActivateLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B981',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  btnActivateLargeText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  btnTextLarge: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  btnTextLargeText: {
+    color: '#666',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  promptOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  promptContent: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    width: '85%',
+    padding: 24,
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  promptTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#B91C1C',
+  },
+  promptSubtitle: {
+    fontSize: 14,
+    color: '#4B5563',
+  },
+  promptOptions: {
+    gap: 12,
+  },
+  promptRadioOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  promptRadioOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  promptRadioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+  },
+  promptRadioLabel: {
+    fontSize: 14,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  promptCustomTextarea: {
+    borderWidth: 1,
+    borderColor: '#CCC',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 13,
+    color: '#333',
+    width: '100%',
+    textAlignVertical: 'top',
+  },
+  promptActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 10,
+  },
+  btnConfirmDeactivate: {
+    backgroundColor: '#EF4444',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  btnConfirmDeactivateText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  btnDisabled: {
+    opacity: 0.5,
+  },
+  reportMiniBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportMiniBadgeReportable: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+  },
+  reportMiniBadgeNotReportable: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#D1D5DB',
+  },
+  reportMiniBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  reportMiniBadgeTextReportable: {
+    color: '#EF4444',
+  },
+  reportMiniBadgeTextNotReportable: {
+    color: '#4B5563',
   },
 });
 

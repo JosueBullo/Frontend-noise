@@ -1,3 +1,6 @@
 {
-  "urlRandomness": "mohgTiY"
+  "urlRandomness": "mohgTiY",
+  "dev": true,
+  "minify": false,
+  "https": false
 }

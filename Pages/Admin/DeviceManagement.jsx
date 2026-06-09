@@ -228,16 +228,16 @@ export default function DeviceManagementAdmin() {
       <StatusBar barStyle="light-content" backgroundColor={C.dark} />
 
       {/* ── Drawer ── */}
-      {drawerVisible && (
+      <Modal visible={drawerVisible} transparent animationType="none" onRequestClose={closeDrawer}>
         <View style={StyleSheet.absoluteFill}>
-          <Animated.View style={[s.overlay, { opacity: overlayAnim }]}>
-            <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={closeDrawer} />
+          <Animated.View style={[StyleSheet.absoluteFill, s.overlay, { opacity: overlayAnim }]}>
+            <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={closeDrawer} />
           </Animated.View>
           <Animated.View style={[s.drawer, { transform: [{ translateX: slideAnim }] }]}>
             <CustomDrawer navigation={navigation} onClose={closeDrawer} />
           </Animated.View>
         </View>
-      )}
+      </Modal>
 
       {/* ── Header ── */}
       <LinearGradient colors={[C.dark, C.mid]} style={s.header}>

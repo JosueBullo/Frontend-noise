@@ -1,10 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
-  Dimensions, StatusBar, Platform, Animated,
+  Dimensions, StatusBar, Platform, Animated, Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import API_BASE_URL from '../utils/api';
 
 const { width, height } = Dimensions.get('window');
 const SB_HEIGHT = Platform.OS === 'ios' ? (height >= 812 ? 44 : 20) : StatusBar.currentHeight || 24;
@@ -24,7 +27,7 @@ const C = {
   muted:  '#A89070',
 };
 
-const TABS = ['ABOUT US', 'FEATURES', 'HOW TO USE'];
+const TABS = ['ABOUT US', 'FEATURES', 'HOW TO USE', 'RESOURCES'];
 
 const MEMBERS = [
   { key: 'RICO',    image: require('../assets/RICO.png'),    name: 'Dr. Rico S. Santos',   role: 'Technical Adviser',                             program: null,            icon: 'school-outline' },
@@ -76,6 +79,25 @@ const HOW_TO_USE = [
   { step: '04', icon: 'send-outline',          color: '#1E88E5', title: 'Submit Your Report',    desc: 'Review the auto-generated report details — including noise classification, AI analysis, and location — then submit. Your complaint is instantly forwarded to the appropriate barangay authority for review.' },
   { step: '05', icon: 'notifications-outline', color: '#FB8C00', title: 'Track Report Status',   desc: 'Monitor the progress of your submitted reports in real time. Receive push notifications when barangay officials update the status — from Pending Review to Monitoring, Action Required, or Resolved.' },
   { step: '06', icon: 'map-outline',           color: '#9C27B0', title: 'Explore the Noise Map', desc: 'Browse the community heatmap to view noise hotspots in your area. Identify streets with recurring disturbances and stay informed about noise conditions across your neighborhood.' },
+];
+
+const ARTICLES = [
+  {
+    title: 'DILG Orders Crackdowns on Loud Videoke During Remote Classes',
+    category: 'GOVERNMENT DIRECTIVE',
+    date: 'October 2020',
+    source: 'DILG Press Release',
+    fullText: 'The Department of the Interior and Local Government (DILG) directed local government units (LGUs) and the Philippine National Police (PNP) to strictly implement ordinances prohibiting loud videoke and other loud noises that disrupt online classes and remote work.\n\nFormer DILG Secretary Eduardo Año emphasized that as students adjust to blended learning, they require a quiet environment to study. LGUs were urged to pass ordinances banning videoke and other distracting noises during class hours (typically 7:00 AM to 5:00 PM, Monday to Friday).\n\nPenalties for violators range from warnings to fines, and confiscation of sound equipment by local barangay officials or police officers. NoiseWatch helps citizens directly log these daytime offenses and report them with decibel data.',
+    image: require('../assets/nuisance.jpg')
+  },
+  {
+    title: 'Metro Manila Traffic Noise Impact on Mental Health & Cardiovascular Safety',
+    category: 'ENVIRONMENTAL STUDY',
+    date: 'March 2023',
+    source: 'DOST / Clean Air Asia',
+    fullText: 'A study conducted on urban noise levels across major thoroughfares in Metro Manila (including EDSA, C-5, and Taft Avenue) revealed that average daytime noise levels regularly exceed 75 decibels (dB), far above the WHO-recommended safety limit of 55 dB.\n\nResearchers highlighted that persistent exposure to traffic noise, train transits, and unregulated vehicle mufflers is a major contributor to high stress, hypertension, sleep disruption, and decreased productivity.\n\nThe report recommends strict implementation of muffler bans, sound barriers near residential zones, and community-driven monitoring systems like NoiseWatch to build high-resolution noise heatmaps for policy formulation.',
+    image: require('../assets/who.jpg')
+  }
 ];
 
 // ── Fade-slide in (content only, not headers) ────────────────────────────────
@@ -168,6 +190,44 @@ export default function LandingPage({ navigation }) {
   const [activeTab, setActiveTab] = useState(0);
   const scrollRef = useRef(null);
   const [tabKey, setTabKey] = useState(0);
+  const [selectedArticle, setSelectedArticle] = useState(null);
+  const [fullscreenImage, setFullscreenImage] = useState(null);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (token) {
+          // Fetch profile to verify token status
+          const response = await axios.get(`${API_BASE_URL}/user/profile`, {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          });
+          
+          if (response.data.success) {
+            const user = response.data.user;
+            if (user.isDeactivated) {
+              navigation.replace('DeactivatedScreen', { reason: user.deactivationReason });
+            } else {
+              const dest = user.userType === 'admin' ? 'AdminDashboard' : 'Home';
+              navigation.reset({ index: 0, routes: [{ name: dest }] });
+            }
+          }
+        }
+      } catch (error) {
+        if (error.response?.status === 403 && error.response?.data?.isDeactivated) {
+          navigation.replace('DeactivatedScreen', { reason: error.response.data.deactivationReason });
+        } else if (error.response?.status === 401 || error.response?.status === 404) {
+          // Token invalid or user deleted, clear session cache
+          await AsyncStorage.multiRemove([
+            'userToken', 'userData', 'isAuthenticated', 'userId', 'userType'
+          ]);
+        }
+      }
+    };
+    checkSession();
+  }, [navigation]);
 
   const handleTabPress = useCallback((idx) => {
     setActiveTab(idx);
@@ -460,6 +520,226 @@ export default function LandingPage({ navigation }) {
             </FadeSlide>
           </View>
         )}
+
+        {/* ════════════════ RESOURCES ════════════════ */}
+        {activeTab === 3 && (
+          <View key={`resources-${tabKey}`}>
+            
+            {/* Page Hero */}
+            <LinearGradient colors={[C.saddle, '#654321']} style={s.pageHero}>
+              <Ionicons name="book-outline" size={32} color={C.gold} />
+              <Text style={s.pageHeroTitle}>Articles & Legal Resources</Text>
+              <Text style={s.pageHeroSub}>Educating communities on noise pollution, global health standards, and local legal rights</Text>
+            </LinearGradient>
+
+            {/* Section 1: Intro */}
+            <FadeSlide delay={60}>
+              <View style={s.section}>
+                <View style={s.sectionLabelRow}>
+                  <View style={s.sectionDot} />
+                  <Text style={s.sectionLabel}>THE INVISIBLE THREAT</Text>
+                </View>
+                <Text style={s.sectionTitle}>Silence is Health: Understanding Noise Pollution</Text>
+                <Text style={s.bodyText}>
+                  Noise pollution is often dismissed as a mere temporary annoyance, yet it remains one of the most pervasive, invisible health hazards of modern urban life. Unlike visible waste, excess sound waves accumulate silently in our nervous systems, inducing chronic stress and deteriorating our well-being. NoiseWatch is built to make this invisible hazard measurable, empowering citizens to reclaim their peace and protect their health.
+                </Text>
+
+                <Text style={[s.detailLabel, { marginTop: 18, marginBottom: 8 }]}>🔍 Noise Disturbance vs. Noise Pollution</Text>
+
+                <View style={[s.descCard, { borderLeftColor: C.gold }]}>
+                  <View style={[s.descCardIconWrap, { backgroundColor: '#FFF8E1' }]}>
+                    <Ionicons name="alert-circle-outline" size={20} color={C.gold} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.descCardTitle}>Noise Disturbance (Panandaliang Ingay)</Text>
+                    <Text style={s.descCardSubText}>
+                      Short-term, localized, and specific noise incidents (e.g., loud videoke, barking dogs, loud vehicle exhausts). These are immediate disturbances governed by local barangay curfews and public nuisance laws.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={[s.descCard, { borderLeftColor: '#E53935' }]}>
+                  <View style={[s.descCardIconWrap, { backgroundColor: '#FFEBEE' }]}>
+                    <Ionicons name="warning-outline" size={20} color="#E53935" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.descCardTitle}>Noise Pollution (Polusyon sa Ingay)</Text>
+                    <Text style={s.descCardSubText}>
+                      Chronic, systemic, and continuous high-decibel exposure (e.g., highway traffic roar, construction zones, airport flight paths). It represents a persistent environmental hazard that degrades public health over time.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </FadeSlide>
+
+            {/* Section 2: WHO Standards */}
+            <FadeSlide delay={120}>
+              <View style={s.section}>
+                <View style={s.sectionLabelRow}>
+                  <View style={s.sectionDot} />
+                  <Text style={s.sectionLabel}>GLOBAL HEALTH GUIDELINES</Text>
+                </View>
+                <Text style={s.sectionTitle}>World Health Organization (WHO) Standards</Text>
+
+                <TouchableOpacity style={s.resourceImageWrap} activeOpacity={0.88} onPress={() => setFullscreenImage(require('../assets/who.jpg'))}>
+                  <Image source={require('../assets/who.jpg')} style={s.resourceImage} resizeMode="contain" />
+                  <View style={s.resourceImageOverlay}>
+                    <Ionicons name="expand-outline" size={18} color={C.white} />
+                    <Text style={s.resourceImageHint}>Tap to view fullscreen</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <Text style={s.bodyText}>
+                  NoiseWatch's standardized decibel threshold system directly aligns with the WHO Guidelines for Community Noise, ensuring your noise reports match global health definitions:
+                </Text>
+
+                <View style={[s.descCard, { borderLeftColor: C.green, marginTop: 12 }]}>
+                  <View style={[s.descCardIconWrap, { backgroundColor: '#E8F5E9' }]}>
+                    <Ionicons name="moon-outline" size={20} color={C.green} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.descCardTitle}>Indoors & Sleep: 30 dB Limit</Text>
+                    <Text style={s.descCardSubText}>For peaceful, uninterrupted sleep, indoor noise levels must not exceed 30 dB. Any noise above this disrupts sleep cycles, leading to cognitive fatigue.</Text>
+                  </View>
+                </View>
+
+                <View style={[s.descCard, { borderLeftColor: C.red }]}>
+                  <View style={[s.descCardIconWrap, { backgroundColor: '#FFEBEE' }]}>
+                    <Ionicons name="heart-outline" size={20} color={C.red} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.descCardTitle}>Chronic Stress: 55–65 dB Limit</Text>
+                    <Text style={s.descCardSubText}>Exposure to daytime ambient levels above 55 dB triggers the body's fight-or-flight response, releasing cortisol, elevating heart rates, and raising long-term cardiovascular risks.</Text>
+                  </View>
+                </View>
+
+                {/* Interactive Decibel Scale Infographic */}
+                <Text style={[s.detailLabel, { marginTop: 14, marginBottom: 8 }]}>🔊 Decibel Scale Comparison Chart</Text>
+                <View style={s.chartBox}>
+                  {[
+                    { source: 'Whispering Leaves', db: 20, barColor: C.green },
+                    { source: 'Quiet Bedroom (WHO Sleep)', db: 30, barColor: C.green },
+                    { source: 'Normal Conversation', db: 60, barColor: C.gold },
+                    { source: 'Heavy Traffic (WHO Danger)', db: 80, barColor: C.red },
+                    { source: 'Loud Videoke / Muffled Motor', db: 100, barColor: '#9C27B0' },
+                  ].map((item, idx) => (
+                    <View key={idx} style={s.chartRow}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                        <Text style={s.chartRowLabel}>{item.source}</Text>
+                        <Text style={[s.chartRowVal, { color: item.barColor }]}>{item.db} dB</Text>
+                      </View>
+                      <View style={s.chartBarBg}>
+                        <View style={[s.chartBarFill, { width: `${item.db}%`, backgroundColor: item.barColor }]} />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </FadeSlide>
+
+            {/* Section 3: Philippine Laws */}
+            <FadeSlide delay={180}>
+              <View style={s.section}>
+                <View style={s.sectionLabelRow}>
+                  <View style={s.sectionDot} />
+                  <Text style={s.sectionLabel}>LEGAL FRAMEWORK</Text>
+                </View>
+                <Text style={s.sectionTitle}>Philippine Noise Laws & Rights</Text>
+
+                <TouchableOpacity style={s.resourceImageWrap} activeOpacity={0.88} onPress={() => setFullscreenImage(require('../assets/nuisance.jpg'))}>
+                  <Image source={require('../assets/nuisance.jpg')} style={s.resourceImage} resizeMode="contain" />
+                  <View style={s.resourceImageOverlay}>
+                    <Ionicons name="expand-outline" size={18} color={C.white} />
+                    <Text style={s.resourceImageHint}>Tap to view fullscreen</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <Text style={s.bodyText}>
+                  Your right to peace is backed by Philippine legislation. Knowing these laws helps you file effective reports:
+                </Text>
+
+                <View style={s.lawCard}>
+                  <Text style={s.lawTitle}>📜 Civil Code (Article 694) - Nuisance</Text>
+                  <Text style={s.lawText}>
+                    Defines a "nuisance" as any act, omission, or condition which injures or endangers the safety or health of others, or offends the senses. Persistent noise disturbance is classified as a legal nuisance (public or private) and is actionable in court or via barangay arbitration.
+                  </Text>
+                </View>
+
+                <View style={s.lawCard}>
+                  <Text style={s.lawTitle}>📜 P.D. 1152 - PH Environment Code</Text>
+                  <Text style={s.lawText}>
+                    Section 48 mandates the establishment of ambient noise standards. Ambient noise constraints protect the public from physical injury and physiological impairment due to excessive noise.
+                  </Text>
+                </View>
+
+                <View style={s.lawCard}>
+                  <Text style={s.lawTitle}>📜 NPCC Residential Decibel Limits</Text>
+                  <Text style={s.lawText}>
+                    Under the National Pollution Control Commission (NPCC), maximum allowable noise levels for residential zones are:
+                  </Text>
+                  <View style={s.lawSubCol}>
+                    <Text style={s.lawSubText}>• Daytime (9 AM – 6 PM): <Text style={{ fontWeight: '800', color: C.saddle }}>55 dB max</Text></Text>
+                    <Text style={s.lawSubText}>• Evening (6 PM – 10 PM): <Text style={{ fontWeight: '800', color: C.gold }}>50 dB max</Text></Text>
+                    <Text style={s.lawSubText}>• Nighttime (10 PM – 5 AM): <Text style={{ fontWeight: '800', color: C.red }}>45 dB max</Text></Text>
+                  </View>
+                </View>
+
+                <View style={s.lawCard}>
+                  <Text style={s.lawTitle}>📜 Barangay Ordinances & Curfews</Text>
+                  <Text style={s.lawText}>
+                    Most cities and municipal councils enforce the DILG-backed 10:00 PM videoke/audio curfew. Noise complaints filed during these hours are subject to immediate confiscation of equipment and local penal fines.
+                  </Text>
+                </View>
+              </View>
+            </FadeSlide>
+
+            {/* Section 4: Real-World News & Case Studies */}
+            <FadeSlide delay={240}>
+              <View style={s.section}>
+                <View style={s.sectionLabelRow}>
+                  <View style={s.sectionDot} />
+                  <Text style={s.sectionLabel}>LATEST LOCAL CASES</Text>
+                </View>
+                <Text style={s.sectionTitle}>Real-World Noise Issues in PH</Text>
+
+                <View style={s.articleCard}>
+                  <Text style={s.articleTitle}>DILG Orders Crackdowns on Loud Videoke During Remote Classes</Text>
+                  <Text style={s.articleDesc}>
+                    Following complaints from teachers and remote workers, the Department of the Interior and Local Government (DILG) ordered local police and barangay councils to curb loud videoke systems and noisy vehicle exhausts during daytime working and class hours.
+                  </Text>
+                  <TouchableOpacity style={s.readMoreBtn} onPress={() => setSelectedArticle(ARTICLES[0])}>
+                    <Text style={s.readMoreBtnText}>Read Article</Text>
+                    <Ionicons name="open-outline" size={14} color={C.saddle} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={s.articleCard}>
+                  <Text style={s.articleTitle}>Metro Manila Traffic Noise Linked to Long-term Stress & Sleep Disorders</Text>
+                  <Text style={s.articleDesc}>
+                    Urban planning studies conducted in Metro Manila show that ambient noise from major roads regularly exceeds 75 dB. Exposure of residential areas to this traffic roar increases cases of hypertension and chronic sleep disturbances among residents.
+                  </Text>
+                  <TouchableOpacity style={s.readMoreBtn} onPress={() => setSelectedArticle(ARTICLES[1])}>
+                    <Text style={s.readMoreBtnText}>Read Study Summary</Text>
+                    <Ionicons name="open-outline" size={14} color={C.saddle} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </FadeSlide>
+
+            {/* Section 5: CTA */}
+            <FadeSlide delay={300}>
+              <LinearGradient colors={[C.saddle, C.dark]} style={s.ctaBox}>
+                <Ionicons name="shield-outline" size={36} color={C.gold} />
+                <Text style={s.ctaTitle}>Empower Your Voice with Data</Text>
+                <Text style={s.ctaDesc}>Don't let noise pollution harm your health. Use NoiseWatch to capture verifiable audio records and file structured complaints with your barangay council.</Text>
+                <TouchableOpacity style={s.ctaBtn} onPress={() => navigation.navigate('Register')}>
+                  <Text style={s.ctaBtnText}>Register Now</Text>
+                  <Ionicons name="arrow-forward" size={16} color={C.saddle} />
+                </TouchableOpacity>
+              </LinearGradient>
+            </FadeSlide>
+          </View>
+        )}
       </ScrollView>
 
       {/* ── Bottom bar ── */}
@@ -473,6 +753,71 @@ export default function LandingPage({ navigation }) {
           <Ionicons name="arrow-forward" size={16} color={C.white} />
         </TouchableOpacity>
       </View>
+
+      {/* ── Article Detail Modal ── */}
+      <Modal
+        visible={!!selectedArticle}
+        animationType="slide"
+        onRequestClose={() => setSelectedArticle(null)}
+      >
+        {selectedArticle && (
+          <View style={s.modalRoot}>
+            {/* Modal header */}
+            <LinearGradient colors={[C.dark, C.saddle]} style={s.modalHeader}>
+              <TouchableOpacity style={s.modalCloseBtn} onPress={() => setSelectedArticle(null)}>
+                <Ionicons name="close" size={22} color={C.white} />
+              </TouchableOpacity>
+              <Text style={s.modalCategory}>{selectedArticle.category}</Text>
+              <Text style={s.modalHeaderTitle} numberOfLines={3}>{selectedArticle.title}</Text>
+              <View style={s.modalMeta}>
+                <Ionicons name="calendar-outline" size={13} color={C.gold} />
+                <Text style={s.modalMetaText}>{selectedArticle.date}</Text>
+                <Ionicons name="library-outline" size={13} color={C.gold} />
+                <Text style={s.modalMetaText}>{selectedArticle.source}</Text>
+              </View>
+            </LinearGradient>
+
+            {/* Scrollable body */}
+            <ScrollView style={s.modalBody} showsVerticalScrollIndicator={false}>
+              <View style={s.modalImageWrap}>
+                <Image
+                  source={selectedArticle.image}
+                  style={s.modalImage}
+                  resizeMode="contain"
+                />
+              </View>
+              <View style={s.modalTextWrap}>
+                {selectedArticle.fullText.split('\n\n').map((paragraph, i) => (
+                  <Text key={i} style={s.modalParagraph}>{paragraph}</Text>
+                ))}
+                <View style={s.modalSourceBadge}>
+                  <Ionicons name="information-circle-outline" size={14} color={C.saddle} />
+                  <Text style={s.modalSourceText}>Source: {selectedArticle.source}</Text>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        )}
+      </Modal>
+
+      {/* ── Fullscreen Image Viewer ── */}
+      <Modal
+        visible={!!fullscreenImage}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setFullscreenImage(null)}
+      >
+        <View style={s.fsRoot}>
+          <Image
+            source={fullscreenImage}
+            style={s.fsImage}
+            resizeMode="contain"
+          />
+          <TouchableOpacity style={s.fsCloseBtn} onPress={() => setFullscreenImage(null)}>
+            <Ionicons name="close" size={24} color={C.white} />
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -600,4 +945,54 @@ const s = StyleSheet.create({
   bottomLoginText:   { fontSize: 14, fontWeight: '700', color: C.saddle },
   bottomRegisterBtn: { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 13, borderRadius: 30, backgroundColor: C.saddle },
   bottomRegisterText:{ fontSize: 14, fontWeight: '800', color: C.white },
+
+  // Resources layout styles
+  detailLabel:    { fontSize: 12, fontWeight: '800', color: C.saddle, letterSpacing: 0.5 },
+  resourceImageWrap: { width: '100%', height: 240, backgroundColor: '#F0EBE3', borderRadius: 14, marginVertical: 14, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  resourceImage:   { width: '100%', height: '100%' },
+  resourceImageOverlay: { position: 'absolute', bottom: 8, right: 10, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.45)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  resourceImageHint: { fontSize: 11, color: C.white, fontWeight: '600' },
+  descCardTitle: { fontSize: 13, fontWeight: '700', color: C.dark, marginBottom: 2 },
+  descCardSubText: { fontSize: 12, color: C.sub, lineHeight: 18 },
+  
+  chartBox: { backgroundColor: C.white, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#F0E8DC', elevation: 2, marginBottom: 12 },
+  chartRow: { marginBottom: 12 },
+  chartRowLabel: { fontSize: 12, color: C.text, fontWeight: '600' },
+  chartRowVal: { fontSize: 11, fontWeight: '800' },
+  chartBarBg: { height: 8, backgroundColor: '#FAF8F5', borderRadius: 4, overflow: 'hidden' },
+  chartBarFill: { height: '100%', borderRadius: 4 },
+  
+  lawCard: { backgroundColor: C.white, borderRadius: 14, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#F0E8DC', elevation: 1 },
+  lawTitle: { fontSize: 13, fontWeight: '800', color: C.dark, marginBottom: 6 },
+  lawText: { fontSize: 12, color: C.sub, lineHeight: 18 },
+  lawSubRow: { marginTop: 6, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  lawSubCol: { marginTop: 8, flexDirection: 'column', gap: 4 },
+  lawSubText: { fontSize: 12, color: C.sub, fontWeight: '600', lineHeight: 20 },
+  
+  articleCard: { backgroundColor: C.white, borderRadius: 14, padding: 14, marginBottom: 12, elevation: 2, borderWidth: 1, borderColor: '#F0E8DC' },
+  articleTitle: { fontSize: 13, fontWeight: '800', color: C.dark, marginBottom: 6, lineHeight: 18 },
+  articleDesc: { fontSize: 12, color: C.sub, lineHeight: 18, marginBottom: 10 },
+  readMoreBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 4 },
+  readMoreBtnText: { fontSize: 12, fontWeight: '700', color: C.saddle },
+
+  // Article detail modal
+  modalRoot:        { flex: 1, backgroundColor: C.bg },
+  modalHeader:      { paddingTop: 52, paddingHorizontal: 20, paddingBottom: 24, gap: 6 },
+  modalCloseBtn:    { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  modalCategory:    { fontSize: 10, fontWeight: '800', color: C.gold, letterSpacing: 1.5 },
+  modalHeaderTitle: { fontSize: 18, fontWeight: '900', color: C.white, lineHeight: 25 },
+  modalMeta:        { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' },
+  modalMetaText:    { fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: '600' },
+  modalBody:        { flex: 1 },
+  modalImageWrap:   { width: '100%', height: 260, backgroundColor: '#F0EBE3', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  modalImage:       { width: '100%', height: '100%' },
+  modalTextWrap:    { padding: 20 },
+  modalParagraph:   { fontSize: 14, color: C.sub, lineHeight: 22, marginBottom: 16 },
+  modalSourceBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.white, borderRadius: 10, padding: 12, marginTop: 8, borderWidth: 1, borderColor: '#F0E8DC' },
+  modalSourceText:  { fontSize: 12, color: C.saddle, fontWeight: '700' },
+
+  // Fullscreen image viewer
+  fsRoot:           { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
+  fsImage:          { width: width, height: height },
+  fsCloseBtn:       { position: 'absolute', top: 52, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center' },
 });

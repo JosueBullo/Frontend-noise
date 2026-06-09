@@ -7,9 +7,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+
 import CustomDrawer from '../CustomDrawer';
 import API_BASE_URL from '../../utils/api';
 import { useNavigation } from '@react-navigation/native';
@@ -39,10 +37,7 @@ const Analytics = () => {
   const [dashboardData, setDashboardData] = useState(null);
   const [aiSummary,     setAiSummary]     = useState(null);
   const [topLocations,  setTopLocations]  = useState([]);
-  const [pdfLoading,    setPdfLoading]    = useState(false);
-  const [emailModal,    setEmailModal]    = useState(false);
-  const [emailInput,    setEmailInput]    = useState('');
-  const [emailStatus,   setEmailStatus]   = useState(null);
+
 
   const periods = [
     { id: 'daily', label: 'Daily' }, { id: 'weekly', label: 'Weekly' },
@@ -145,168 +140,6 @@ const Analytics = () => {
     if (critical === 0 && periodReports > 0) observations.push(`No critical-level reports — noise levels remain manageable.`);
 
     return { actions, observations };
-  };
-
-  // ── Generate & share PDF ───────────────────────────────────
-  const generateHTML = () => {
-    const u  = dashboardData?.userStats   || {};
-    const r  = dashboardData?.reportStats || {};
-    const cats = dashboardData?.noiseCategories || [];
-    const ai = aiSummary?.summary || {};
-    const { actions, observations } = buildConclusion();
-    const periodReports = r.periodReports || 0;
-    const resRate = periodReports > 0 ? Math.round(((r.resolvedReports || 0) / periodReports) * 100) : 0;
-    const max = topLocations[0]?.count || 1;
-
-    const statsHTML = [
-      ['Total Users', u.totalUsers || 0], ['Active Users', u.activeUsers || 0],
-      ['New Users', u.newUsers || 0], ['Period Reports', r.periodReports || 0],
-      ['Total Reports', r.totalReports || 0], ['Resolved', r.resolvedReports || 0],
-      ...(ai.totalAiReports ? [['AI Analyzed', ai.totalAiReports]] : []),
-      ...(ai.avgDecibel ? [['Avg Decibel', `${ai.avgDecibel} dB`]] : []),
-    ].map(([k, v]) => `<div class="stat"><div class="stat-label">${k}</div><div class="stat-val">${v}</div></div>`).join('');
-
-    const noiseLevelsHTML = (r.noiseLevels || []).map(n =>
-      `<tr><td style="color:${noiseLevelColor(n.level)};font-weight:700">${n.level?.charAt(0).toUpperCase() + n.level?.slice(1)}</td><td>${n.count}</td><td>${Math.round(n.percentage || 0)}%</td></tr>`
-    ).join('');
-
-    const statusHTML = (r.reportStatus || []).map(s =>
-      `<tr><td>${s.status?.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}</td><td>${s.count}</td><td>${Math.round(s.percentage || 0)}%</td></tr>`
-    ).join('');
-
-    const catsHTML = cats.slice(0, 10).map((c, i) =>
-      `<tr><td>${i + 1}</td><td>${c.name}</td><td>${c.count}</td></tr>`
-    ).join('');
-
-    const locHTML = topLocations.map((loc, i) =>
-      `<tr><td style="font-weight:700;color:${i === 0 ? '#F44336' : i === 1 ? '#8B4513' : '#DAA520'}">#${i + 1}</td><td>${loc.location}</td><td>${loc.count}</td><td>${Math.round((loc.count / max) * 100)}%</td></tr>`
-    ).join('');
-
-    const aiDetHTML = (aiSummary?.topDetections || []).map(d => `<tr><td>${d.detection}</td><td>${d.count}</td></tr>`).join('');
-    const aiDistHTML = (aiSummary?.distanceDistribution || []).map(d => `<tr><td>${d.category}</td><td>${d.count}</td></tr>`).join('');
-
-    const actionsHTML = actions.map((a, i) => `<li>${i + 1}. ${a}</li>`).join('');
-    const obsHTML = observations.map(o => `<li>${o}</li>`).join('');
-
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-      body{font-family:Arial,sans-serif;margin:0;padding:0;background:#F5F0E8;color:#333}
-      .header{background:linear-gradient(135deg,#3E2C23,#5D4A36);color:#FDF5E6;padding:28px 24px;display:flex;align-items:center;gap:16px}
-      .header h1{margin:0;font-size:20px;letter-spacing:1px}
-      .header p{margin:4px 0 0;color:#DAA520;font-size:12px}
-      .gold-bar{height:4px;background:#DAA520}
-      .body{padding:20px}
-      .section-head{background:#5D4A36;color:#FDF5E6;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:700;margin:18px 0 10px}
-      .summary-box{background:#FDF5E6;border:1.5px solid #DAA520;border-left:4px solid #DAA520;border-radius:6px;padding:14px;font-size:12px;line-height:1.7;color:#333}
-      .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:4px}
-      .stat{background:#fff;border-radius:8px;padding:12px;border-left:3px solid #8B4513}
-      .stat-label{font-size:10px;color:#8B7355;margin-bottom:4px}
-      .stat-val{font-size:20px;font-weight:800;color:#3E2C23}
-      table{width:100%;border-collapse:collapse;font-size:12px}
-      th{background:#8B4513;color:#fff;padding:8px;text-align:left}
-      td{padding:7px 8px;border-bottom:1px solid #EEE}
-      tr:nth-child(even) td{background:#FDF5E6}
-      .actions-box{background:#FFEBEE;border:1.5px solid #F44336;border-left:4px solid #F44336;border-radius:6px;padding:14px;margin-bottom:10px}
-      .actions-box h4{color:#C62828;margin:0 0 8px;font-size:13px}
-      .actions-box li{font-size:12px;color:#333;margin-bottom:4px}
-      .obs-box{background:#E8F5E9;border:1.5px solid #4CAF50;border-left:4px solid #4CAF50;border-radius:6px;padding:14px}
-      .obs-box h4{color:#2E7D32;margin:0 0 8px;font-size:13px}
-      .obs-box li{font-size:12px;color:#333;margin-bottom:4px}
-      .footer{background:#3E2C23;color:#DAA520;text-align:center;padding:12px;font-size:10px;margin-top:20px}
-    </style></head><body>
-    <div class="header">
-      <div>
-        <h1>NOISEWATCH ANALYTICS REPORT</h1>
-        <p>Period: ${getPeriodTitle()} &nbsp;|&nbsp; Generated: ${new Date().toLocaleString()}</p>
-      </div>
-    </div>
-    <div class="gold-bar"></div>
-    <div class="body">
-      <div class="section-head">EXECUTIVE SUMMARY</div>
-      <div class="summary-box">${buildSummary()}</div>
-
-      <div class="section-head">KEY STATISTICS</div>
-      <div class="stats">${statsHTML}</div>
-
-      ${noiseLevelsHTML ? `<div class="section-head">NOISE LEVEL BREAKDOWN</div>
-      <table><tr><th>Level</th><th>Count</th><th>Percentage</th></tr>${noiseLevelsHTML}</table>` : ''}
-
-      ${statusHTML ? `<div class="section-head">REPORT STATUS</div>
-      <table><tr><th>Status</th><th>Count</th><th>Percentage</th></tr>${statusHTML}</table>` : ''}
-
-      ${catsHTML ? `<div class="section-head">TOP NOISE CATEGORIES</div>
-      <table><tr><th>#</th><th>Category</th><th>Reports</th></tr>${catsHTML}</table>` : ''}
-
-      ${locHTML ? `<div class="section-head">TOP 5 MOST REPORTED LOCATIONS</div>
-      <table><tr><th>Rank</th><th>Location (Street, City)</th><th>Reports</th><th>Share</th></tr>${locHTML}</table>` : ''}
-
-      ${aiDetHTML ? `<div class="section-head">AI ANALYSIS — TOP DETECTIONS</div>
-      <table><tr><th>Detection</th><th>Count</th></tr>${aiDetHTML}</table>` : ''}
-
-      ${aiDistHTML ? `<div class="section-head">AI ANALYSIS — DISTANCE DISTRIBUTION</div>
-      <table><tr><th>Category</th><th>Count</th></tr>${aiDistHTML}</table>` : ''}
-
-      <div class="section-head">CONCLUSION & RECOMMENDED ACTIONS</div>
-      ${actions.length ? `<div class="actions-box"><h4>IMMEDIATE ACTIONS REQUIRED</h4><ul>${actionsHTML}</ul></div>` : ''}
-      ${observations.length ? `<div class="obs-box"><h4>POSITIVE OBSERVATIONS</h4><ul>${obsHTML}</ul></div>` : ''}
-    </div>
-    <div class="footer">NoiseWatch Admin System — Confidential &nbsp;|&nbsp; ${new Date().toLocaleDateString()}</div>
-    </body></html>`;
-  };
-
-  const handleDownloadPDF = async () => {
-    if (!dashboardData) return;
-    setPdfLoading(true);
-    try {
-      const { uri } = await Print.printToFileAsync({ html: generateHTML(), base64: false });
-      const filename = `NoiseWatch_Analytics_${getPeriodTitle()}_${new Date().toISOString().slice(0, 10)}.pdf`;
-      const dest = `${FileSystem.documentDirectory}${filename}`;
-      await FileSystem.moveAsync({ from: uri, to: dest });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(dest, { mimeType: 'application/pdf', dialogTitle: 'Save / Share Analytics Report' });
-      } else {
-        Alert.alert('Saved', `Report saved to: ${dest}`);
-      }
-    } catch (e) {
-      Alert.alert('Error', 'Could not generate PDF: ' + e.message);
-    } finally {
-      setPdfLoading(false);
-    }
-  };
-
-  const handleSendEmail = async () => {
-    if (!dashboardData || !emailInput.trim()) return;
-    setPdfLoading(true);
-    try {
-      const { uri } = await Print.printToFileAsync({ html: generateHTML(), base64: false });
-      const b64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-      const token = await AsyncStorage.getItem('userToken');
-      const res = await fetch(`${API_BASE_URL}/analytics/send-report-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          to: emailInput.trim(),
-          pdfBase64: b64,
-          periodTitle: getPeriodTitle(),
-          summary: {
-            Period: getPeriodTitle(),
-            'Total Users': dashboardData?.userStats?.totalUsers || 0,
-            'Period Reports': dashboardData?.reportStats?.periodReports || 0,
-            'Total Reports': dashboardData?.reportStats?.totalReports || 0,
-            Resolved: dashboardData?.reportStats?.resolvedReports || 0,
-          },
-        }),
-      });
-      const result = await res.json();
-      if (!result.success) throw new Error(result.error || 'Failed');
-      setEmailStatus({ type: 'success', msg: `Report sent to ${emailInput.trim()}` });
-    } catch (e) {
-      setEmailStatus({ type: 'error', msg: e.message || 'Failed to send email.' });
-    } finally {
-      setPdfLoading(false);
-      setEmailModal(false);
-      setEmailInput('');
-      setTimeout(() => setEmailStatus(null), 5000);
-    }
   };
 
   // ── Render helpers ─────────────────────────────────────────
@@ -503,49 +336,7 @@ const Analytics = () => {
     );
   };
 
-  // ── Email modal ────────────────────────────────────────────
-  const renderEmailModal = () => (
-    <Modal visible={emailModal} transparent animationType="slide" onRequestClose={() => setEmailModal(false)}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.emailModal}>
-          <View style={styles.emailModalHeader}>
-            <Ionicons name="mail-outline" size={22} color={C.saddle} />
-            <Text style={styles.emailModalTitle}>Send Analytics Report</Text>
-            <TouchableOpacity onPress={() => setEmailModal(false)}>
-              <Ionicons name="close" size={22} color={C.dark} />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.emailModalDesc}>The PDF will be generated and sent directly as an email attachment.</Text>
-          <Text style={styles.emailLabel}>Recipient Email</Text>
-          <View style={styles.emailInputWrap}>
-            <Ionicons name="mail-outline" size={16} color={C.sub} />
-            <TextInput
-              style={styles.emailInput}
-              value={emailInput}
-              onChangeText={setEmailInput}
-              placeholder="recipient@example.com"
-              placeholderTextColor={C.sub}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
-          <View style={styles.emailModalBtns}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setEmailModal(false); setEmailInput(''); }}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.sendBtn, (!emailInput.trim() || pdfLoading) && styles.sendBtnDisabled]}
-              onPress={handleSendEmail}
-              disabled={!emailInput.trim() || pdfLoading}
-            >
-              {pdfLoading ? <ActivityIndicator size="small" color={C.cream} /> : <Ionicons name="send-outline" size={16} color={C.cream} />}
-              <Text style={styles.sendBtnText}>{pdfLoading ? 'Sending...' : 'Send'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+
 
   if (loading && !refreshing) {
     return (
@@ -571,12 +362,6 @@ const Analytics = () => {
               <TouchableOpacity onPress={() => fetchData(true)} style={styles.headerBtn} disabled={refreshing}>
                 <Ionicons name="refresh-outline" size={22} color={C.cream} style={refreshing ? { opacity: 0.5 } : {}} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleDownloadPDF} style={styles.headerBtn} disabled={!dashboardData || pdfLoading}>
-                <Ionicons name="download-outline" size={22} color={C.cream} style={(!dashboardData || pdfLoading) ? { opacity: 0.4 } : {}} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setEmailModal(true)} style={styles.headerBtn} disabled={!dashboardData || pdfLoading}>
-                <Ionicons name="mail-outline" size={22} color={C.cream} style={(!dashboardData || pdfLoading) ? { opacity: 0.4 } : {}} />
-              </TouchableOpacity>
             </View>
           </View>
           <Text style={styles.headerTitle}>ANALYTICS</Text>
@@ -599,19 +384,7 @@ const Analytics = () => {
         </ScrollView>
       </View>
 
-      {/* Export buttons */}
-      {dashboardData && (
-        <View style={styles.exportBar}>
-          <TouchableOpacity style={styles.exportBtn} onPress={handleDownloadPDF} disabled={pdfLoading}>
-            <Ionicons name="document-outline" size={16} color={C.cream} />
-            <Text style={styles.exportBtnText}>{pdfLoading ? 'Generating...' : 'Download PDF'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.exportBtn, styles.exportBtnOutline]} onPress={() => setEmailModal(true)} disabled={pdfLoading}>
-            <Ionicons name="mail-outline" size={16} color={C.saddle} />
-            <Text style={[styles.exportBtnText, { color: C.saddle }]}>Send via Email</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+
 
       {/* Error */}
       {fetchError && (
@@ -622,13 +395,7 @@ const Analytics = () => {
         </View>
       )}
 
-      {/* Email status toast */}
-      {emailStatus && (
-        <View style={[styles.toast, { backgroundColor: emailStatus.type === 'success' ? '#E8F5E9' : '#FFEBEE', borderColor: emailStatus.type === 'success' ? C.green : C.red }]}>
-          <Ionicons name={emailStatus.type === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={16} color={emailStatus.type === 'success' ? C.green : C.red} />
-          <Text style={[styles.toastText, { color: emailStatus.type === 'success' ? '#2E7D32' : '#C62828' }]}>{emailStatus.msg}</Text>
-        </View>
-      )}
+
 
       <ScrollView
         style={styles.scroll}
@@ -668,7 +435,7 @@ const Analytics = () => {
         </View>
       </Modal>
 
-      {renderEmailModal()}
+
     </View>
   );
 };

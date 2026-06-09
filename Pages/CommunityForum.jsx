@@ -468,6 +468,165 @@ const cm = StyleSheet.create({
   sendBtnOff:  { backgroundColor: C.muted },
 });
 
+// ── Notifications Modal ──────────────────────────────────────────────────────
+function NotificationsModal({ visible, onClose, token, onAllRead }) {
+  const [notifs, setNotifs]     = useState([]);
+  const [loading, setLoading]   = useState(false);
+  const [unread, setUnread]     = useState(0);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const res  = await fetch(`${API_BASE_URL}/forum/notifications`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNotifs(data.notifications || []);
+        setUnread(data.unreadCount || 0);
+      }
+    } catch {}
+    finally { setLoading(false); }
+  }, [token]);
+
+  useEffect(() => { if (visible) load(); }, [visible, load]);
+
+  const markOne = async (id) => {
+    try {
+      await fetch(`${API_BASE_URL}/forum/notifications/${id}/read`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotifs(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
+      setUnread(prev => Math.max(0, prev - 1));
+    } catch {}
+  };
+
+  const markAll = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/forum/notifications/read`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotifs(prev => prev.map(n => ({ ...n, read: true })));
+      setUnread(0);
+      onAllRead();
+    } catch {}
+  };
+
+  const typeIcon = (type) => {
+    if (type === 'like')    return { name: 'heart',              color: '#F44336' };
+    if (type === 'comment') return { name: 'chatbubble',         color: '#2196F3' };
+    if (type === 'removed') return { name: 'ban',                color: '#FF5722' };
+    return                         { name: 'notifications',      color: C.saddle  };
+  };
+
+  const renderItem = ({ item }) => {
+    const icon = typeIcon(item.type);
+    const sender = item.senderId;
+    const postPreview = item.postId?.text ? `"${item.postId.text.slice(0, 40)}${item.postId.text.length > 40 ? '...' : ''}"` : '';
+    return (
+      <TouchableOpacity
+        style={[nf.row, !item.read && nf.rowUnread]}
+        activeOpacity={0.78}
+        onPress={() => { if (!item.read) markOne(item._id); }}
+      >
+        {/* Sender avatar or type icon */}
+        <View style={[nf.avatar, { backgroundColor: icon.color + '22' }]}>
+          {sender?.profilePhoto
+            ? <Image source={{ uri: sender.profilePhoto }} style={nf.avatarImg} />
+            : <Ionicons name={icon.name} size={18} color={icon.color} />
+          }
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text style={nf.msg} numberOfLines={3}>
+            <Text style={{ fontWeight: '800', color: C.dark }}>
+              {sender?.username || 'Someone'}
+            </Text>
+            {' '}{item.message}
+          </Text>
+          {!!postPreview && <Text style={nf.postPreview} numberOfLines={1}>{postPreview}</Text>}
+          <Text style={nf.time}>{timeAgo(item.createdAt)}</Text>
+        </View>
+
+        {!item.read && <View style={nf.dot} />}
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={nf.overlay}>
+        <View style={nf.sheet}>
+          {/* Header */}
+          <View style={nf.header}>
+            <View>
+              <Text style={nf.title}>Notifications</Text>
+              {unread > 0 && <Text style={nf.subtitle}>{unread} unread</Text>}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {unread > 0 && (
+                <TouchableOpacity style={nf.markAllBtn} onPress={markAll}>
+                  <Ionicons name="checkmark-done-outline" size={15} color={C.saddle} />
+                  <Text style={nf.markAllText}>Mark all read</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={onClose}>
+                <Ionicons name="close" size={24} color={C.dark} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {loading ? (
+            <View style={nf.center}>
+              <ActivityIndicator color={C.saddle} />
+              <Text style={nf.loadingText}>Loading notifications...</Text>
+            </View>
+          ) : notifs.length === 0 ? (
+            <View style={nf.center}>
+              <Ionicons name="notifications-off-outline" size={48} color="#CCC" />
+              <Text style={nf.emptyText}>No notifications yet</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={notifs}
+              keyExtractor={item => item._id}
+              renderItem={renderItem}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 20 }}
+              ItemSeparatorComponent={() => <View style={nf.sep} />}
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const nf = StyleSheet.create({
+  overlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet:       { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '80%', minHeight: 300 },
+  header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  title:       { fontSize: 18, fontWeight: '800', color: C.dark },
+  subtitle:    { fontSize: 11, color: C.saddle, fontWeight: '700', marginTop: 2 },
+  markAllBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FFF3E0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: '#FFD08A' },
+  markAllText: { fontSize: 11, color: C.saddle, fontWeight: '700' },
+  center:      { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 12 },
+  emptyText:   { fontSize: 14, color: C.muted, fontWeight: '600' },
+  loadingText: { fontSize: 13, color: C.muted, marginTop: 8 },
+  row:         { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12, paddingHorizontal: 4, borderRadius: 12 },
+  rowUnread:   { backgroundColor: '#FFFBF0' },
+  avatar:      { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  avatarImg:   { width: 42, height: 42, borderRadius: 21 },
+  msg:         { fontSize: 13, color: C.text, lineHeight: 19 },
+  postPreview: { fontSize: 11.5, color: C.muted, marginTop: 3, fontStyle: 'italic' },
+  time:        { fontSize: 10.5, color: C.muted, marginTop: 4 },
+  dot:         { width: 9, height: 9, borderRadius: 5, backgroundColor: C.saddle, marginTop: 5, flexShrink: 0 },
+  sep:         { height: 1, backgroundColor: C.border, marginHorizontal: 4 },
+});
+
 // ── Post Card ─────────────────────────────────────────────────────────────────
 function PostCard({ post, currentUserId, token, isAdmin, onLike, onDelete, onOpenComments }) {
   const isOwner = String(post.userId?._id) === String(currentUserId);
@@ -632,8 +791,9 @@ export default function CommunityForum({ navigation }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [isAdmin, setIsAdmin]           = useState(false);
   const [createVisible, setCreateVisible] = useState(false);
-  const [commentsPost, setCommentsPost] = useState(null);
-  const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [commentsPost, setCommentsPost]   = useState(null);
+  const [notifVisible, setNotifVisible]   = useState(false);
+  const [unreadNotifs, setUnreadNotifs]   = useState(0);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const slideAnim   = useRef(new Animated.Value(-width * 0.82)).current;
   const overlayAnim = useRef(new Animated.Value(0)).current;
@@ -781,15 +941,7 @@ export default function CommunityForum({ navigation }) {
           {/* Notification bell */}
           <TouchableOpacity
             style={s.notifBtn}
-            onPress={async () => {
-              if (token) {
-                await fetch(`${API_BASE_URL}/forum/notifications/read`, {
-                  method: 'PUT',
-                  headers: { Authorization: `Bearer ${token}` },
-                });
-                setUnreadNotifs(0);
-              }
-            }}
+            onPress={() => setNotifVisible(true)}
           >
             <Ionicons name="notifications-outline" size={24} color={C.gold} />
             {unreadNotifs > 0 && (
@@ -842,6 +994,13 @@ export default function CommunityForum({ navigation }) {
       </TouchableOpacity>
 
       {/* Modals */}
+      <NotificationsModal
+        visible={notifVisible}
+        onClose={() => setNotifVisible(false)}
+        token={token}
+        onAllRead={() => setUnreadNotifs(0)}
+      />
+
       <CreatePostModal
         visible={createVisible}
         onClose={() => setCreateVisible(false)}

@@ -142,6 +142,20 @@ export default function Home({ navigation }) {
         fetch(`${API_BASE_URL}/analytics/top-locations?period=weekly&limit=5`, { headers }),
       ]);
 
+      // Check for user deactivation response (403 Forbidden)
+      for (const result of [usersRes, reportsCountRes, myReportsRes, hotspotsRes]) {
+        if (result.status === 'fulfilled' && result.value && result.value.status === 403) {
+          const data = await result.value.clone().json().catch(() => ({}));
+          if (data.isDeactivated) {
+            await AsyncStorage.multiRemove([
+              'userToken', 'userData', 'isAuthenticated', 'userId', 'userType'
+            ]);
+            navigation.replace('DeactivatedScreen', { reason: data.deactivationReason });
+            return;
+          }
+        }
+      }
+
       if (usersRes.status === 'fulfilled' && usersRes.value.ok) {
         const d = await usersRes.value.json();
         setTotalUsers(d.totalUsers || 0);

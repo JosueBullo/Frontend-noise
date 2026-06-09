@@ -6,8 +6,10 @@ import { PaperProvider, MD3LightTheme } from 'react-native-paper';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from './utils/toast';
 import LandingPage from './Pages/LandingPage';
+import SplashScreen from './Pages/Splash';
 import Login from './Pages/Auth/Login';
 import Register from './Pages/Auth/Register';
+import DeactivatedScreen from './Pages/Auth/DeactivatedScreen';
 import Home from './Pages/Home'
 import AdminDashboard from './Pages/Admin/AdminDashboard';
 import UserManagement from './Pages/Admin/UserManagement';
@@ -52,12 +54,19 @@ export default function App() {
       <NavigationContainer onStateChange={navigationStateChange}>
         <StatusBar style="auto" />
         <Stack.Navigator 
-          initialRouteName="Landing"
+          initialRouteName="Splash"
           screenOptions={{
             headerShown: false,
             gestureEnabled: true,
           }}
         >
+          {/* Splash Screen */}
+          <Stack.Screen
+            name="Splash"
+            component={SplashScreen}
+            options={{ headerShown: false, gestureEnabled: false }}
+          />
+
           {/* Landing Page */}
           <Stack.Screen
             name="Landing"
@@ -73,6 +82,11 @@ export default function App() {
           <Stack.Screen 
             name="Register" 
             component={Register}
+          />
+          <Stack.Screen 
+            name="DeactivatedScreen" 
+            component={DeactivatedScreen}
+            options={{ headerShown: false, gestureEnabled: false }}
           />
           
           {/* User Screens */}

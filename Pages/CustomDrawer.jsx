@@ -168,6 +168,14 @@ const CustomDrawer = ({ navigation, onClose }) => {
         await AsyncStorage.setItem('userType', u.userType || 'user');
       }
     } catch (e) {
+      if (e.response?.status === 403 && e.response?.data?.isDeactivated) {
+        await AsyncStorage.multiRemove([
+          'userToken', 'userData', 'isAuthenticated', 'userId', 'userType'
+        ]);
+        if (onClose) onClose();
+        navigation.replace('DeactivatedScreen', { reason: e.response.data.deactivationReason });
+        return;
+      }
       const stored = await AsyncStorage.getItem('userData');
       if (stored) {
         const u = JSON.parse(stored);
