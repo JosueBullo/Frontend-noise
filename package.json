@@ -32,7 +32,6 @@
     "expo-print": "~15.0.8",
     "expo-sharing": "~14.0.8",
     "expo-status-bar": "~3.0.9",
-    "ffmpeg-kit-react-native": "^6.0.2",
     "lucide-react-native": "^0.525.0",
     "prop-types": "^15.8.1",
     "react": "19.1.0",
