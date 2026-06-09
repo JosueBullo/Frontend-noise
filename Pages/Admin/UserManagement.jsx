@@ -13,10 +13,12 @@ import {
   Dimensions,
   Animated,
   Easing,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import CustomDrawer from '../CustomDrawer';
 import API_BASE_URL from '../../utils/api';
 
@@ -56,7 +58,12 @@ const UserManagement = ({ setShowUserModal }) => {
     try {
       setReportsLoading(true);
       setReportsError(null);
-      const response = await fetch(`${API_BASE_URL}/reports/get-user-report/${userId}`);
+      const token = await AsyncStorage.getItem('userToken');
+      const response = await fetch(`${API_BASE_URL}/reports/get-user-report/${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       if (!response.ok) throw new Error('Failed to fetch user reports');
       const data = await response.json();
       setUserReports(data.reports || []);
@@ -71,20 +78,22 @@ const UserManagement = ({ setShowUserModal }) => {
   const deactivateUser = async (userId, reason) => {
     try {
       setProcessing(true);
+      const token = await AsyncStorage.getItem('userToken');
       const response = await fetch(`${API_BASE_URL}/user/deactivate/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ reason })
       });
       const data = await response.json();
       if (response.ok && data.success) {
         setUsers(prevUsers => prevUsers.map(u => 
-          (u._id === userId || u.id === userId) ? { ...u, isDeactivated: true, deactivationReason: reason } : u
+          (u._id === userId || u.id === userId) ? { ...u, status: 'deactivated', isDeactivated: true, deactivationReason: reason } : u
         ));
         if (selectedUserForModal && (selectedUserForModal._id === userId || selectedUserForModal.id === userId)) {
-          setSelectedUserForModal(prev => ({ ...prev, isDeactivated: true, deactivationReason: reason }));
+          setSelectedUserForModal(prev => ({ ...prev, status: 'deactivated', isDeactivated: true, deactivationReason: reason }));
         }
         setShowDeactivatePrompt(false);
         Alert.alert('Success', `User deactivated. Reason: ${reason}`);
@@ -101,19 +110,21 @@ const UserManagement = ({ setShowUserModal }) => {
   const activateUser = async (userId) => {
     try {
       setProcessing(true);
+      const token = await AsyncStorage.getItem('userToken');
       const response = await fetch(`${API_BASE_URL}/user/activate/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         }
       });
       const data = await response.json();
       if (response.ok && data.success) {
         setUsers(prevUsers => prevUsers.map(u => 
-          (u._id === userId || u.id === userId) ? { ...u, isDeactivated: false, deactivationReason: null } : u
+          (u._id === userId || u.id === userId) ? { ...u, status: 'active', isDeactivated: false, deactivationReason: null } : u
         ));
         if (selectedUserForModal && (selectedUserForModal._id === userId || selectedUserForModal.id === userId)) {
-          setSelectedUserForModal(prev => ({ ...prev, isDeactivated: false, deactivationReason: null }));
+          setSelectedUserForModal(prev => ({ ...prev, status: 'active', isDeactivated: false, deactivationReason: null }));
         }
         Alert.alert('Success', 'User activated successfully.');
       } else {
@@ -269,7 +280,7 @@ const UserManagement = ({ setShowUserModal }) => {
     </TouchableOpacity>
   );
 
-  const FilterModal = () => (
+  const renderFilterModal = () => (
     <Modal
       visible={showFilterDropdown}
       transparent={true}
@@ -398,7 +409,7 @@ const UserManagement = ({ setShowUserModal }) => {
     </View>
   );
 
-  const UserDetailModal = () => {
+  const renderUserDetailModal = () => {
     if (!selectedUserForModal) return null;
 
     const user = selectedUserForModal;
@@ -584,89 +595,78 @@ const UserManagement = ({ setShowUserModal }) => {
                 <Text style={styles.btnTextLargeText}>Close</Text>
               </TouchableOpacity>
             </View>
-
-            {/* Inner Deactivation Prompt Modal */}
-            {showDeactivatePrompt && (
-              <Modal
-                visible={true}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setShowDeactivatePrompt(false)}
-              >
-                <TouchableOpacity 
-                  style={styles.promptOverlay}
-                  activeOpacity={1}
-                  onPress={() => setShowDeactivatePrompt(false)}
-                >
-                  <View style={styles.promptContent} onStartShouldSetResponder={() => true}>
-                    <Text style={styles.promptTitle}>Deactivate User</Text>
-                    <Text style={styles.promptSubtitle}>Select suspension reason:</Text>
-                    
-                    <View style={styles.promptOptions}>
-                      {[
-                        { key: 'spam', label: 'Spamming of reports' },
-                        { key: 'warning', label: 'Frequent warnings on the forum' },
-                        { key: 'custom', label: 'Other (Please specify)' }
-                      ].map(opt => (
-                        <TouchableOpacity 
-                          key={opt.key} 
-                          style={styles.promptRadioOption}
-                          onPress={() => setDeactivateReasonType(opt.key)}
-                        >
-                          <View style={styles.promptRadioOuter}>
-                            {deactivateReasonType === opt.key && <View style={styles.promptRadioInner} />}
-                          </View>
-                          <Text style={styles.promptRadioLabel}>{opt.label}</Text>
-                        </TouchableOpacity>
-                      ))}
-
-                      {deactivateReasonType === 'custom' && (
-                        <TextInput
-                          style={styles.promptCustomTextarea}
-                          placeholder="Enter custom deactivation reason..."
-                          placeholderTextColor="#999"
-                          multiline={true}
-                          numberOfLines={3}
-                          value={customDeactivateReason}
-                          onChangeText={setCustomDeactivateReason}
-                        />
-                      )}
-                    </View>
-
-                    <View style={styles.promptActionsRow}>
-                      <TouchableOpacity 
-                        style={styles.btnText}
-                        onPress={() => setShowDeactivatePrompt(false)}
-                      >
-                        <Text style={styles.btnTextLabel}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={[styles.btnConfirmDeactivate, processing || (deactivateReasonType === 'custom' && !customDeactivateReason.trim()) ? styles.btnDisabled : null]}
-                        disabled={processing || (deactivateReasonType === 'custom' && !customDeactivateReason.trim())}
-                        onPress={() => {
-                          let reasonText = 'Spamming of reports';
-                          if (deactivateReasonType === 'warning') {
-                            reasonText = 'Frequent warnings on the forum';
-                          } else if (deactivateReasonType === 'custom') {
-                            reasonText = customDeactivateReason.trim();
-                          }
-                          deactivateUser(user._id || user.id, reasonText);
-                        }}
-                      >
-                        <Text style={styles.btnConfirmDeactivateText}>
-                          {processing ? 'Processing...' : 'Confirm'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              </Modal>
-            )}
           </View>
+
+          {showDeactivatePrompt && (
+            <View style={[StyleSheet.absoluteFill, styles.promptOverlay]}>
+              <View style={styles.promptContent} onStartShouldSetResponder={() => true}>
+                <Text style={styles.promptTitle}>Deactivate User</Text>
+                <Text style={styles.promptSubtitle}>Select suspension reason:</Text>
+                
+                <View style={styles.promptOptions}>
+                  {[
+                    { key: 'spam', label: 'Spamming of reports' },
+                    { key: 'warning', label: 'Frequent warnings on the forum' },
+                    { key: 'custom', label: 'Other (Please specify)' }
+                  ].map(opt => (
+                    <TouchableOpacity 
+                      key={opt.key} 
+                      style={styles.promptRadioOption}
+                      onPress={() => setDeactivateReasonType(opt.key)}
+                    >
+                      <View style={styles.promptRadioOuter}>
+                        {deactivateReasonType === opt.key && <View style={styles.promptRadioInner} />}
+                      </View>
+                      <Text style={styles.promptRadioLabel}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+
+                  {deactivateReasonType === 'custom' && (
+                    <TextInput
+                      style={styles.promptCustomTextarea}
+                      placeholder="Enter custom deactivation reason..."
+                      placeholderTextColor="#999"
+                      multiline={true}
+                      numberOfLines={3}
+                      value={customDeactivateReason}
+                      onChangeText={setCustomDeactivateReason}
+                    />
+                  )}
+                </View>
+
+                <View style={styles.promptActionsRow}>
+                  <TouchableOpacity 
+                    style={styles.btnText}
+                    onPress={() => setShowDeactivatePrompt(false)}
+                  >
+                    <Text style={styles.btnTextLabel}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.btnConfirmDeactivate, processing || (deactivateReasonType === 'custom' && !customDeactivateReason.trim()) ? styles.btnDisabled : null]}
+                    disabled={processing || (deactivateReasonType === 'custom' && !customDeactivateReason.trim())}
+                    onPress={() => {
+                      let reasonText = 'Spamming of reports';
+                      if (deactivateReasonType === 'warning') {
+                        reasonText = 'Frequent warnings on the forum';
+                      } else if (deactivateReasonType === 'custom') {
+                        reasonText = customDeactivateReason.trim();
+                      }
+                      deactivateUser(user._id || user.id, reasonText);
+                    }}
+                  >
+                    <Text style={styles.btnConfirmDeactivateText}>
+                      {processing ? 'Processing...' : 'Confirm'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
         </View>
       </Modal>
     );
   };
+
 
   if (loading) {
     return (
@@ -689,14 +689,7 @@ const UserManagement = ({ setShowUserModal }) => {
               <Text style={styles.headerTitle}>User Management</Text>
               <Text style={styles.headerSubtitle}>Manage your users and roles</Text>
             </View>
-            <View style={styles.headerRight}>
-              <TouchableOpacity style={styles.headerButton}>
-                <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.headerButton}>
-                <Ionicons name="settings-outline" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+            <View style={styles.headerRight} />
           </View>
         </View>
       </View>
@@ -747,8 +740,8 @@ const UserManagement = ({ setShowUserModal }) => {
         </View>
       </View>
 
-      <FilterModal />
-      <UserDetailModal />
+      {renderFilterModal()}
+      {renderUserDetailModal()}
 
       {/* Custom Drawer */}
       <Modal visible={drawerVisible} transparent animationType="none" onRequestClose={closeDrawer}>
