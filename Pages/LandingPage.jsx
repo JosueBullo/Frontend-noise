@@ -33,7 +33,7 @@ const MEMBERS = [
   { key: 'RICO',    image: require('../assets/RICO.png'),    name: 'Dr. Rico S. Santos',   role: 'Technical Adviser',                             program: null,            icon: 'school-outline' },
   { key: 'CHAN',    image: require('../assets/CHAN.png'),    name: 'Christian Salagubang', role: 'Leader · Full Stack Developer · Documentation', program: 'BSIT 4th Year', icon: 'code-slash-outline' },
   { key: 'CARLA',  image: require('../assets/CARLA.jpg'),   name: 'Carla Dasal',          role: 'Full Stack Developer · Prototype Developer',    program: 'BSIT 4th Year', icon: 'construct-outline' },
-  { key: 'JL',     image: require('../assets/JL.png'),     name: 'John Lawrence Josue',  role: 'Full Stack Developer · Prototype Developer',    program: 'BSIT 4th Year', icon: 'construct-outline' },
+  { key: 'JL',     image: require('../assets/JL.jpg'),     name: 'John Lawrence Josue',  role: 'Full Stack Developer · Prototype Developer',    program: 'BSIT 4th Year', icon: 'construct-outline' },
   { key: 'CHARLES',image: require('../assets/CHARLES.jpg'), name: 'Charles Derick Bulante', role: 'UI/UX Designer · Documentation',               program: 'BSIT 4th Year', icon: 'color-palette-outline' },
 ];
 
