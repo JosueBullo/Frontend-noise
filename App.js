@@ -107,7 +107,7 @@ export default function App() {
             component={MapScreen}
             options={{
               headerShown: false,
-              gestureEnabled: true,
+              gestureEnabled: false,
             }}
           />
 

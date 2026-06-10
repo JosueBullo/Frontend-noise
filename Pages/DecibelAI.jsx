@@ -266,7 +266,7 @@ export default function DecibelAI({ visible, onClose }) {
                 <TextInput
                   style={s.input}
                   placeholder="Ask about noise disturbances..."
-                  placeholderTextColor={C.muted}
+                  placeholderTextColor="#767676"
                   value={input}
                   onChangeText={setInput}
                   multiline
@@ -331,7 +331,7 @@ const s = StyleSheet.create({
 
   // Input
   inputRow:       { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.white, borderTopWidth: 1, borderTopColor: '#EEE' },
-  input:          { flex: 1, backgroundColor: C.bg, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: C.dark, maxHeight: 100, borderWidth: 1, borderColor: '#E8DDD0' },
+  input:          { flex: 1, backgroundColor: C.bg, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: '#000000', maxHeight: 100, borderWidth: 1, borderColor: '#E8DDD0', minHeight: 44, textAlignVertical: 'center' },
   sendBtn:        { width: 44, height: 44, borderRadius: 22, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center' },
   sendBtnDisabled:{ backgroundColor: C.muted },
 });
