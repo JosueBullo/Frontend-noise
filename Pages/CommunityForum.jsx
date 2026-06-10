@@ -4,7 +4,7 @@ import {
   Image, Modal, ActivityIndicator, RefreshControl, Alert,
   StatusBar, Dimensions, Platform, Animated, KeyboardAvoidingView,
   ScrollView,
-} from 'react-native';import { LinearGradient } from 'expo-linear-gradient';
+} from 'react-native'; import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -16,10 +16,10 @@ const { width } = Dimensions.get('window');
 const SB = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 24;
 
 const C = {
-  dark:   '#3E2C23', saddle: '#8B4513', gold: '#DAA520',
-  cream:  '#FDF5E6', bg: '#F5F0E8',    white: '#FFFFFF',
-  text:   '#333333', muted: '#A89070', sub: '#8B7355',
-  red:    '#F44336', blue: '#2196F3',  green: '#4CAF50',
+  dark: '#3E2C23', saddle: '#8B4513', gold: '#DAA520',
+  cream: '#FDF5E6', bg: '#F5F0E8', white: '#FFFFFF',
+  text: '#333333', muted: '#A89070', sub: '#8B7355',
+  red: '#F44336', blue: '#2196F3', green: '#4CAF50',
   border: '#E8DDD0',
 };
 
@@ -29,14 +29,14 @@ function timeAgo(ts) {
   if (dm < 1) return 'Just now';
   if (dm < 60) return `${dm}m ago`;
   if (dh < 24) return `${dh}h ago`;
-  if (dd < 7)  return `${dd}d ago`;
+  if (dd < 7) return `${dd}d ago`;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 // ── Create Post Modal ─────────────────────────────────────────────────────────
 function CreatePostModal({ visible, onClose, onPosted, token }) {
-  const [text, setText]       = useState('');
-  const [media, setMedia]     = useState(null); // { uri, type: 'image'|'video' }
+  const [text, setText] = useState('');
+  const [media, setMedia] = useState(null); // { uri, type: 'image'|'video' }
   const [loading, setLoading] = useState(false);
   const [warning, setWarning] = useState('');
 
@@ -61,7 +61,7 @@ function CreatePostModal({ visible, onClose, onPosted, token }) {
       const form = new FormData();
       if (text.trim()) form.append('text', text.trim());
       if (media) {
-        const ext  = media.uri.split('.').pop();
+        const ext = media.uri.split('.').pop();
         const mime = media.type === 'video' ? `video/${ext}` : `image/${ext}`;
         form.append('media', { uri: media.uri, name: `post.${ext}`, type: mime });
       }
@@ -163,33 +163,33 @@ function CreatePostModal({ visible, onClose, onPosted, token }) {
 }
 
 const cp = StyleSheet.create({
-  overlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet:        { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '90%' },
-  header:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  title:        { fontSize: 18, fontWeight: '800', color: C.dark },
-  input:        { backgroundColor: C.bg, borderRadius: 14, padding: 14, fontSize: 15, color: C.text, minHeight: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: C.border, marginBottom: 12 },
-  previewWrap:  { position: 'relative', marginBottom: 12 },
-  preview:      { width: '100%', height: 200, borderRadius: 12 },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '90%' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  title: { fontSize: 18, fontWeight: '800', color: C.dark },
+  input: { backgroundColor: C.bg, borderRadius: 14, padding: 14, fontSize: 15, color: C.text, minHeight: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: C.border, marginBottom: 12 },
+  previewWrap: { position: 'relative', marginBottom: 12 },
+  preview: { width: '100%', height: 200, borderRadius: 12 },
   videoPreview: { width: '100%', height: 120, borderRadius: 12, backgroundColor: '#F0EBE3', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  videoLabel:   { fontSize: 13, color: C.saddle, fontWeight: '600' },
-  removeMedia:  { position: 'absolute', top: 8, right: 8 },
-  mediaRow:     { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  mediaBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, backgroundColor: C.bg, borderRadius: 12, borderWidth: 1, borderColor: C.border },
+  videoLabel: { fontSize: 13, color: C.saddle, fontWeight: '600' },
+  removeMedia: { position: 'absolute', top: 8, right: 8 },
+  mediaRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  mediaBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, backgroundColor: C.bg, borderRadius: 12, borderWidth: 1, borderColor: C.border },
   mediaBtnText: { fontSize: 14, color: C.saddle, fontWeight: '600' },
-  postBtn:      { backgroundColor: C.saddle, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  postBtn: { backgroundColor: C.saddle, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   postBtnDisabled: { backgroundColor: C.muted },
-  postBtnText:  { color: C.white, fontWeight: '800', fontSize: 16 },
-  warningBox:   { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#FFF3E0', borderRadius: 10, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#FFB74D' },
-  warningText:  { flex: 1, fontSize: 13, color: '#E65100', lineHeight: 18 },
+  postBtnText: { color: C.white, fontWeight: '800', fontSize: 16 },
+  warningBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#FFF3E0', borderRadius: 10, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#FFB74D' },
+  warningText: { flex: 1, fontSize: 13, color: '#E65100', lineHeight: 18 },
 });
 
 // ── Comments Modal ────────────────────────────────────────────────────────────
 function CommentsModal({ visible, post, onClose, token, currentUserId, isAdmin, onUpdated }) {
-  const [text, setText]         = useState('');
-  const [loading, setLoading]   = useState(false);
+  const [text, setText] = useState('');
+  const [loading, setLoading] = useState(false);
   const [comments, setComments] = useState(post?.comments || []);
-  const [warning, setWarning]   = useState('');
-  const [replyTo, setReplyTo]   = useState(null); // { commentId, username }
+  const [warning, setWarning] = useState('');
+  const [replyTo, setReplyTo] = useState(null); // { commentId, username }
   const [replyText, setReplyText] = useState('');
   const [replyLoading, setReplyLoading] = useState(false);
 
@@ -260,7 +260,7 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, isAdmin, 
         setComments(updated);
         onUpdated(post._id, { comments: updated });
       }
-    } catch {}
+    } catch { }
   };
 
   const canDeleteComment = (item) => isAdmin || String(item.userId?._id) === String(currentUserId);
@@ -422,63 +422,63 @@ function CommentsModal({ visible, post, onClose, token, currentUserId, isAdmin, 
 }
 
 const cm = StyleSheet.create({
-  overlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet:       { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, height: '80%' },
-  header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  title:       { fontSize: 16, fontWeight: '800', color: C.dark },
-  empty:       { textAlign: 'center', color: C.muted, marginTop: 24, fontSize: 14 },
-  commentRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 6 },
-  avatar:      { width: 34, height: 34, borderRadius: 17, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  avatarImg:   { width: 34, height: 34, borderRadius: 17 },
-  avatarText:  { color: C.white, fontWeight: '800', fontSize: 14 },
-  bubble:      { flex: 1, backgroundColor: C.bg, borderRadius: 14, padding: 10 },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, height: '80%' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  title: { fontSize: 16, fontWeight: '800', color: C.dark },
+  empty: { textAlign: 'center', color: C.muted, marginTop: 24, fontSize: 14 },
+  commentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 6 },
+  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  avatarImg: { width: 34, height: 34, borderRadius: 17 },
+  avatarText: { color: C.white, fontWeight: '800', fontSize: 14 },
+  bubble: { flex: 1, backgroundColor: C.bg, borderRadius: 14, padding: 10 },
   bubbleAdmin: { backgroundColor: '#FFF8E1', borderLeftWidth: 3, borderLeftColor: C.gold },
-  username:    { fontSize: 12, fontWeight: '800', color: C.saddle },
-  adminBadge:  { backgroundColor: C.gold, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
+  username: { fontSize: 12, fontWeight: '800', color: C.saddle },
+  adminBadge: { backgroundColor: C.gold, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
   adminBadgeText: { fontSize: 9, fontWeight: '900', color: C.dark },
   commentText: { fontSize: 14, color: C.text, lineHeight: 20 },
-  time:        { fontSize: 10, color: C.muted, marginTop: 4 },
+  time: { fontSize: 10, color: C.muted, marginTop: 4 },
   commentActions: { flexDirection: 'row', gap: 12, marginTop: 6 },
-  replyBtn:    { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  replyBtnText:{ fontSize: 11, color: C.saddle, fontWeight: '700' },
+  replyBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  replyBtnText: { fontSize: 11, color: C.saddle, fontWeight: '700' },
   // Inline reply input
-  inlineReplyRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 44, marginBottom: 8, marginTop: 2 },
-  inlineReplyAvatar:{ width: 26, height: 26, borderRadius: 13, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  inlineReplyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 44, marginBottom: 8, marginTop: 2 },
+  inlineReplyAvatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   inlineReplyAvatarText: { color: C.white, fontWeight: '800', fontSize: 13 },
   inlineReplyInput: { flex: 1, backgroundColor: C.bg, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 7, fontSize: 13, color: C.text, borderWidth: 1, borderColor: C.gold },
   // Replies thread
   repliesContainer: { marginLeft: 44, marginBottom: 10, borderLeftWidth: 2, borderLeftColor: C.border, paddingLeft: 10 },
-  replyRow:         { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 },
-  replyRowAdmin:    {},
-  replyAvatar:      { width: 26, height: 26, borderRadius: 13, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  replyAvatarImg:   { width: 26, height: 26, borderRadius: 13 },
-  replyAvatarText:  { color: C.white, fontWeight: '800', fontSize: 11 },  replyBubble:      { flex: 1, backgroundColor: C.bg, borderRadius: 12, padding: 8 },
+  replyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 },
+  replyRowAdmin: {},
+  replyAvatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  replyAvatarImg: { width: 26, height: 26, borderRadius: 13 },
+  replyAvatarText: { color: C.white, fontWeight: '800', fontSize: 11 }, replyBubble: { flex: 1, backgroundColor: C.bg, borderRadius: 12, padding: 8 },
   replyBubbleAdmin: { backgroundColor: '#FFF8E1', borderLeftWidth: 2, borderLeftColor: C.gold },
-  replyUsername:    { fontSize: 11, fontWeight: '800', color: C.saddle },
-  replyText:        { fontSize: 13, color: C.text, lineHeight: 18 },
+  replyUsername: { fontSize: 11, fontWeight: '800', color: C.saddle },
+  replyText: { fontSize: 13, color: C.text, lineHeight: 18 },
   // Input row
-  inputRow:    { paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border },
-  inputInner:  { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  warningBox:  { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#FFF3E0', borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: '#FFB74D' },
+  inputRow: { paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border },
+  inputInner: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  warningBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#FFF3E0', borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: '#FFB74D' },
   warningText: { flex: 1, fontSize: 12, color: '#E65100', lineHeight: 17 },
   adminCommentBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFF8E1', borderRadius: 8, padding: 8, marginBottom: 8, borderWidth: 1, borderColor: C.gold },
   adminCommentBannerText: { fontSize: 12, color: C.saddle, fontWeight: '700' },
-  input:       { flex: 1, backgroundColor: C.bg, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: C.text, borderWidth: 1, borderColor: C.border },
-  sendBtn:     { width: 44, height: 44, borderRadius: 22, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center' },
-  sendBtnOff:  { backgroundColor: C.muted },
+  input: { flex: 1, backgroundColor: C.bg, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: C.text, borderWidth: 1, borderColor: C.border },
+  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center' },
+  sendBtnOff: { backgroundColor: C.muted },
 });
 
 // ── Notifications Modal ──────────────────────────────────────────────────────
 function NotificationsModal({ visible, onClose, token, onAllRead }) {
-  const [notifs, setNotifs]     = useState([]);
-  const [loading, setLoading]   = useState(false);
-  const [unread, setUnread]     = useState(0);
+  const [notifs, setNotifs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [unread, setUnread] = useState(0);
 
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     try {
-      const res  = await fetch(`${API_BASE_URL}/forum/notifications`, {
+      const res = await fetch(`${API_BASE_URL}/forum/notifications`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -486,7 +486,7 @@ function NotificationsModal({ visible, onClose, token, onAllRead }) {
         setNotifs(data.notifications || []);
         setUnread(data.unreadCount || 0);
       }
-    } catch {}
+    } catch { }
     finally { setLoading(false); }
   }, [token]);
 
@@ -500,7 +500,7 @@ function NotificationsModal({ visible, onClose, token, onAllRead }) {
       });
       setNotifs(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
       setUnread(prev => Math.max(0, prev - 1));
-    } catch {}
+    } catch { }
   };
 
   const markAll = async () => {
@@ -512,14 +512,14 @@ function NotificationsModal({ visible, onClose, token, onAllRead }) {
       setNotifs(prev => prev.map(n => ({ ...n, read: true })));
       setUnread(0);
       onAllRead();
-    } catch {}
+    } catch { }
   };
 
   const typeIcon = (type) => {
-    if (type === 'like')    return { name: 'heart',              color: '#F44336' };
-    if (type === 'comment') return { name: 'chatbubble',         color: '#2196F3' };
-    if (type === 'removed') return { name: 'ban',                color: '#FF5722' };
-    return                         { name: 'notifications',      color: C.saddle  };
+    if (type === 'like') return { name: 'heart', color: '#F44336' };
+    if (type === 'comment') return { name: 'chatbubble', color: '#2196F3' };
+    if (type === 'removed') return { name: 'ban', color: '#FF5722' };
+    return { name: 'notifications', color: C.saddle };
   };
 
   const renderItem = ({ item }) => {
@@ -606,25 +606,25 @@ function NotificationsModal({ visible, onClose, token, onAllRead }) {
 }
 
 const nf = StyleSheet.create({
-  overlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet:       { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '80%', minHeight: 300 },
-  header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
-  title:       { fontSize: 18, fontWeight: '800', color: C.dark },
-  subtitle:    { fontSize: 11, color: C.saddle, fontWeight: '700', marginTop: 2 },
-  markAllBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FFF3E0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: '#FFD08A' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '80%', minHeight: 300 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  title: { fontSize: 18, fontWeight: '800', color: C.dark },
+  subtitle: { fontSize: 11, color: C.saddle, fontWeight: '700', marginTop: 2 },
+  markAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FFF3E0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: '#FFD08A' },
   markAllText: { fontSize: 11, color: C.saddle, fontWeight: '700' },
-  center:      { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 12 },
-  emptyText:   { fontSize: 14, color: C.muted, fontWeight: '600' },
+  center: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 12 },
+  emptyText: { fontSize: 14, color: C.muted, fontWeight: '600' },
   loadingText: { fontSize: 13, color: C.muted, marginTop: 8 },
-  row:         { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12, paddingHorizontal: 4, borderRadius: 12 },
-  rowUnread:   { backgroundColor: '#FFFBF0' },
-  avatar:      { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  avatarImg:   { width: 42, height: 42, borderRadius: 21 },
-  msg:         { fontSize: 13, color: C.text, lineHeight: 19 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12, paddingHorizontal: 4, borderRadius: 12 },
+  rowUnread: { backgroundColor: '#FFFBF0' },
+  avatar: { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  avatarImg: { width: 42, height: 42, borderRadius: 21 },
+  msg: { fontSize: 13, color: C.text, lineHeight: 19 },
   postPreview: { fontSize: 11.5, color: C.muted, marginTop: 3, fontStyle: 'italic' },
-  time:        { fontSize: 10.5, color: C.muted, marginTop: 4 },
-  dot:         { width: 9, height: 9, borderRadius: 5, backgroundColor: C.saddle, marginTop: 5, flexShrink: 0 },
-  sep:         { height: 1, backgroundColor: C.border, marginHorizontal: 4 },
+  time: { fontSize: 10.5, color: C.muted, marginTop: 4 },
+  dot: { width: 9, height: 9, borderRadius: 5, backgroundColor: C.saddle, marginTop: 5, flexShrink: 0 },
+  sep: { height: 1, backgroundColor: C.border, marginHorizontal: 4 },
 });
 
 // ── Post Card ─────────────────────────────────────────────────────────────────
@@ -752,63 +752,63 @@ function PostCard({ post, currentUserId, token, isAdmin, onLike, onDelete, onOpe
 }
 
 const pc = StyleSheet.create({
-  card:       { backgroundColor: C.white, marginBottom: 10, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border },
-  authorRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, marginBottom: 10 },
-  avatar:     { width: 40, height: 40, borderRadius: 20, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center' },
-  avatarImg:  { width: 40, height: 40, borderRadius: 20 },
+  card: { backgroundColor: C.white, marginBottom: 10, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border },
+  authorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, marginBottom: 10 },
+  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.saddle, justifyContent: 'center', alignItems: 'center' },
+  avatarImg: { width: 40, height: 40, borderRadius: 20 },
   avatarText: { color: C.white, fontWeight: '800', fontSize: 16 },
-  username:   { fontSize: 14, fontWeight: '800', color: C.dark },
-  time:       { fontSize: 11, color: C.muted },
+  username: { fontSize: 14, fontWeight: '800', color: C.dark },
+  time: { fontSize: 11, color: C.muted },
   adminBadge: { backgroundColor: C.gold, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
   adminBadgeText: { fontSize: 9, fontWeight: '900', color: C.dark },
-  text:       { fontSize: 15, color: C.text, lineHeight: 22, paddingHorizontal: 16, marginBottom: 10 },
+  text: { fontSize: 15, color: C.text, lineHeight: 22, paddingHorizontal: 16, marginBottom: 10 },
   // Responsive media — full width, auto height via aspectRatio
-  media:      { width: '100%', aspectRatio: 4 / 3, marginBottom: 10 },
+  media: { width: '100%', aspectRatio: 4 / 3, marginBottom: 10 },
   // Expand hint overlay on image
   expandHint: { position: 'absolute', bottom: 18, right: 10, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 14, padding: 5 },
-  actions:    { flexDirection: 'row', gap: 20, paddingHorizontal: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
-  actionBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  actions: { flexDirection: 'row', gap: 20, paddingHorizontal: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionText: { fontSize: 14, color: C.muted, fontWeight: '600' },
-  tombstone:  { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 4 },
+  tombstone: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 4 },
   tombstoneTitle: { fontSize: 13, fontWeight: '700', color: '#F44336' },
   tombstoneReason: { fontSize: 12, color: C.muted, marginTop: 2 },
   // Lightbox
   lightboxOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
-  lightboxClose:   { position: 'absolute', top: 48, right: 16, zIndex: 10 },
-  lightboxScroll:  { flexGrow: 1, justifyContent: 'center', alignItems: 'center', minHeight: '100%' },
-  lightboxImg:     { width: width, height: undefined, aspectRatio: 1, maxHeight: '90%' },
+  lightboxClose: { position: 'absolute', top: 48, right: 16, zIndex: 10 },
+  lightboxScroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', minHeight: '100%' },
+  lightboxImg: { width: width, height: undefined, aspectRatio: 1, maxHeight: '90%' },
 });
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function CommunityForum({ navigation }) {
-  const [posts, setPosts]               = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [refreshing, setRefreshing]     = useState(false);
-  const [page, setPage]                 = useState(1);
-  const [hasMore, setHasMore]           = useState(true);
-  const [loadingMore, setLoadingMore]   = useState(false);
-  const [token, setToken]               = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [token, setToken] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
-  const [isAdmin, setIsAdmin]           = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [createVisible, setCreateVisible] = useState(false);
-  const [commentsPost, setCommentsPost]   = useState(null);
-  const [notifVisible, setNotifVisible]   = useState(false);
-  const [unreadNotifs, setUnreadNotifs]   = useState(0);
+  const [commentsPost, setCommentsPost] = useState(null);
+  const [notifVisible, setNotifVisible] = useState(false);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const slideAnim   = useRef(new Animated.Value(-width * 0.82)).current;
+  const slideAnim = useRef(new Animated.Value(-width * 0.82)).current;
   const overlayAnim = useRef(new Animated.Value(0)).current;
 
   const openDrawer = () => {
     setDrawerVisible(true);
     Animated.parallel([
-      Animated.timing(slideAnim,   { toValue: 0,             duration: 320, useNativeDriver: true }),
-      Animated.timing(overlayAnim, { toValue: 1,             duration: 320, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 320, useNativeDriver: true }),
+      Animated.timing(overlayAnim, { toValue: 1, duration: 320, useNativeDriver: true }),
     ]).start();
   };
   const closeDrawer = () => {
     Animated.parallel([
-      Animated.timing(slideAnim,   { toValue: -width * 0.82, duration: 280, useNativeDriver: true }),
-      Animated.timing(overlayAnim, { toValue: 0,             duration: 250, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: -width * 0.82, duration: 280, useNativeDriver: true }),
+      Animated.timing(overlayAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
     ]).start(() => setDrawerVisible(false));
   };
 
@@ -821,7 +821,7 @@ export default function CommunityForum({ navigation }) {
       if (stored) {
         const u = JSON.parse(stored);
         setCurrentUserId(u._id || u.id);
-        setIsAdmin((u.userType || '').toLowerCase() === 'admin');
+        setIsAdmin(['admin', 'administrator'].includes((u.userType || u.role || '').toLowerCase()));
       }
     })();
   }, []);
@@ -835,7 +835,7 @@ export default function CommunityForum({ navigation }) {
       });
       const data = await res.json();
       if (data.success) setUnreadNotifs(data.unreadCount || 0);
-    } catch {}
+    } catch { }
   }, [token]);
 
   useEffect(() => {
@@ -882,7 +882,7 @@ export default function CommunityForum({ navigation }) {
           setCommentsPost(prev => ({ ...prev, likeCount: data.likeCount, likedByMe: data.likedByMe }));
         }
       }
-    } catch {}
+    } catch { }
   };
 
   const handleDelete = async (postId) => {
@@ -900,7 +900,7 @@ export default function CommunityForum({ navigation }) {
       }
       const res = await fetch(url, options);
       if (res.ok) setPosts(prev => prev.filter(p => p._id !== postId));
-    } catch {}
+    } catch { }
   };
 
   const handlePostUpdated = (postId, updates) => {
@@ -1036,24 +1036,24 @@ export default function CommunityForum({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:        { flex: 1, backgroundColor: C.bg },
-  header:      { paddingTop: SB + 8, paddingHorizontal: 16, paddingBottom: 14 },
+  root: { flex: 1, backgroundColor: C.bg },
+  header: { paddingTop: SB + 8, paddingHorizontal: 16, paddingBottom: 14 },
   headerInner: { flexDirection: 'row', alignItems: 'center' },
-  headerBtn:   { padding: 6 },
+  headerBtn: { padding: 6 },
   headerTitle: { fontSize: 17, fontWeight: '800', color: C.white },
-  headerSub:   { fontSize: 11, color: 'rgba(255,255,255,0.7)' },
-  composeBtn:  { width: 38, height: 38, borderRadius: 19, backgroundColor: C.gold, justifyContent: 'center', alignItems: 'center' },
-  notifBtn:    { padding: 6, position: 'relative', marginRight: 4 },
-  notifBadge:  { position: 'absolute', top: 0, right: 0, backgroundColor: C.red, borderRadius: 8, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3 },
+  headerSub: { fontSize: 11, color: 'rgba(255,255,255,0.7)' },
+  composeBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.gold, justifyContent: 'center', alignItems: 'center' },
+  notifBtn: { padding: 6, position: 'relative', marginRight: 4 },
+  notifBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: C.red, borderRadius: 8, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3 },
   notifBadgeText: { fontSize: 9, color: C.white, fontWeight: '900' },
-  center:      { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, color: C.saddle, fontSize: 14 },
-  empty:       { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, paddingHorizontal: 32 },
-  emptyTitle:  { fontSize: 18, fontWeight: '700', color: '#999', marginTop: 14 },
-  emptySub:    { fontSize: 13, color: '#BBB', textAlign: 'center', marginTop: 6, lineHeight: 20 },
-  emptyBtn:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.saddle, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, marginTop: 20 },
-  emptyBtnText:{ color: C.white, fontWeight: '700', fontSize: 14 },
-  fab:         { position: 'absolute', bottom: 24, right: 20 },
-  fabInner:    { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: C.dark, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 6 },
-  drawerWrap:  { width: width * 0.82, position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: C.white, elevation: 5 },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, paddingHorizontal: 32 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#999', marginTop: 14 },
+  emptySub: { fontSize: 13, color: '#BBB', textAlign: 'center', marginTop: 6, lineHeight: 20 },
+  emptyBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.saddle, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, marginTop: 20 },
+  emptyBtnText: { color: C.white, fontWeight: '700', fontSize: 14 },
+  fab: { position: 'absolute', bottom: 24, right: 20 },
+  fabInner: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: C.dark, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 6 },
+  drawerWrap: { width: width * 0.82, position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: C.white, elevation: 5 },
 });

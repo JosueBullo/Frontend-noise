@@ -42,6 +42,14 @@ const UserProfile = ({ navigation }) => {
     email: '',
   });
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isPasswordModalVisible, setIsPasswordModalVisible] = useState(false);
+  const [passwordFormData, setPasswordFormData] = useState({
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
@@ -405,6 +413,119 @@ const UserProfile = ({ navigation }) => {
     }
   };
 
+  const getPasswordStrength = (pass) => {
+    if (!pass) return { score: 0, label: '', color: '#ddd', barWidth: '0%' };
+    let score = 0;
+    
+    // Length check
+    if (pass.length >= 6) score += 1;
+    if (pass.length >= 8) score += 1;
+    
+    // Complexity checks
+    if (/[A-Z]/.test(pass)) score += 1; // Uppercase
+    if (/[0-9]/.test(pass)) score += 1; // Number
+    if (/[^A-Za-z0-9]/.test(pass)) score += 1; // Special char
+    
+    if (pass.length < 6) {
+      return { score: 1, label: 'Weak', color: '#FF4D4D', barWidth: '33%' };
+    }
+    
+    if (score <= 2) {
+      return { score: 1, label: 'Weak', color: '#FF4D4D', barWidth: '33%' };
+    } else if (score <= 4) {
+      return { score: 2, label: 'Good', color: '#FFA500', barWidth: '66%' };
+    } else {
+      return { score: 3, label: 'Strong', color: '#2ECC71', barWidth: '100%' };
+    }
+  };
+
+  const updatePassword = async () => {
+    try {
+      setIsUpdatingPassword(true);
+      const token = await AsyncStorage.getItem('userToken');
+      const userId = await AsyncStorage.getItem('userId');
+      
+      if (!token) {
+        navigation.replace('Login');
+        return;
+      }
+
+      if (!userId) {
+        throw new Error('User ID not found');
+      }
+
+      // Strength validation before submitting
+      const strength = getPasswordStrength(passwordFormData.newPassword);
+      if (strength.label === 'Weak') {
+        showToast('error', 'Validation Error', 'Password strength must be at least Good');
+        setIsUpdatingPassword(false);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('password', passwordFormData.newPassword.trim());
+      
+      // Keep existing user profile properties
+      if (profileData) {
+        formData.append('username', profileData.username);
+        formData.append('email', profileData.email);
+        if (profileData.userType) {
+          formData.append('userType', profileData.userType);
+        }
+      }
+
+      const response = await axios.put(
+        `${API_BASE_URL}/user/update/${userId}`,
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      const data = response.data;
+      if (data.message !== 'User updated successfully' && !data.success) {
+        throw new Error(data.message || 'Password update failed');
+      }
+
+      setIsPasswordModalVisible(false);
+      setPasswordFormData({ newPassword: '', confirmPassword: '' });
+      showToast('success', 'Password Updated', 'Your password has been updated successfully');
+
+    } catch (error) {
+      console.error('Password update error:', error);
+      let errorMessage = 'Failed to update password';
+      if (error.response) {
+        errorMessage = error.response.data?.message || `Server error: ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage = 'Network error - please check your connection';
+      } else {
+        errorMessage = error.message || 'Failed to update password';
+      }
+      showToast('error', 'Update Failed', errorMessage);
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
+
+  const handleUpdatePassword = () => {
+    if (!passwordFormData.newPassword) {
+      showToast('error', 'Validation Error', 'New password is required');
+      return;
+    }
+    if (passwordFormData.newPassword !== passwordFormData.confirmPassword) {
+      showToast('error', 'Validation Error', 'Passwords do not match');
+      return;
+    }
+    if (passwordFormData.newPassword.length < 6) {
+      showToast('error', 'Validation Error', 'Password must be at least 6 characters long');
+      return;
+    }
+    updatePassword();
+  };
+
   useEffect(() => {
     fetchProfile();
   }, []);
@@ -562,6 +683,15 @@ const UserProfile = ({ navigation }) => {
             <Ionicons name="create-outline" size={20} color="#8B4513" />
             <Text style={styles.editButtonText}>Edit Profile</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.editButton, { marginTop: 12 }]}
+            onPress={() => setIsPasswordModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="key-outline" size={20} color="#8B4513" />
+            <Text style={styles.editButtonText}>Change Password</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -628,6 +758,129 @@ const UserProfile = ({ navigation }) => {
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Text style={styles.saveButtonText}>Save Changes</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Change Password Modal */}
+      <Modal
+        visible={isPasswordModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsPasswordModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Change Password</Text>
+              <TouchableOpacity
+                onPress={() => setIsPasswordModalVisible(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color="#8B4513" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalContent}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>New Password</Text>
+                <View style={styles.passwordInputContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    value={passwordFormData.newPassword}
+                    onChangeText={(text) => setPasswordFormData(prev => ({ ...prev, newPassword: text }))}
+                    placeholder="Enter new password"
+                    placeholderTextColor="#999"
+                    secureTextEntry={!showNewPassword}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowNewPassword(!showNewPassword)}
+                  >
+                    <Ionicons
+                      name={showNewPassword ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color="#666"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Password Strength Indicator */}
+                {passwordFormData.newPassword.length > 0 && (
+                  <View style={styles.strengthContainer}>
+                    <View style={styles.strengthBarBackground}>
+                      <View
+                        style={[
+                          styles.strengthBar,
+                          {
+                            width: getPasswordStrength(passwordFormData.newPassword).barWidth,
+                            backgroundColor: getPasswordStrength(passwordFormData.newPassword).color,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.strengthText,
+                        { color: getPasswordStrength(passwordFormData.newPassword).color },
+                      ]}
+                    >
+                      Password Strength: {getPasswordStrength(passwordFormData.newPassword).label}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Confirm New Password</Text>
+                <View style={styles.passwordInputContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    value={passwordFormData.confirmPassword}
+                    onChangeText={(text) => setPasswordFormData(prev => ({ ...prev, confirmPassword: text }))}
+                    placeholder="Confirm new password"
+                    placeholderTextColor="#999"
+                    secureTextEntry={!showConfirmPassword}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    <Ionicons
+                      name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color="#666"
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setIsPasswordModalVisible(false);
+                  setPasswordFormData({ newPassword: '', confirmPassword: '' });
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.saveButton, isUpdatingPassword && styles.saveButtonDisabled]}
+                onPress={handleUpdatePassword}
+                disabled={isUpdatingPassword}
+              >
+                {isUpdatingPassword ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Update Password</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -866,6 +1119,43 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  passwordInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    backgroundColor: '#FAFAFA',
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#2C1810',
+  },
+  eyeButton: {
+    padding: 10,
+    marginRight: 4,
+  },
+  strengthContainer: {
+    marginTop: 8,
+  },
+  strengthBarBackground: {
+    height: 4,
+    backgroundColor: '#EEE',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  strengthBar: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  strengthText: {
+    fontSize: 12,
     fontWeight: '600',
   },
 });

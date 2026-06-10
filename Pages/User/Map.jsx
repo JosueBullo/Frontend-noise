@@ -12,8 +12,9 @@ import {
   Easing,
   Text,
   Alert,
+  Linking,
 } from "react-native";
-import MapView, { Marker, Circle, Callout } from 'react-native-maps';
+import { WebView } from 'react-native-webview';
 import * as Location from "expo-location";
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,8 +33,8 @@ const MapScreen = ({ navigation }) => {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [reports, setReports] = useState([]);
-  const [addresses, setAddresses] = useState({}); // key: "lat,lon" → { street, area, loading }
-  const mapRef = useRef(null);
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
+  const webviewRef = useRef(null);
 
   // Animation refs for drawer
   const slideAnim = useRef(new Animated.Value(-width * 0.8)).current;
@@ -104,6 +105,38 @@ const MapScreen = ({ navigation }) => {
     })();
   }, []);
 
+  // Post data to WebView when ready
+  useEffect(() => {
+    if (isMapLoaded && region && webviewRef.current) {
+      webviewRef.current.postMessage(JSON.stringify({
+        type: 'INIT_MAP',
+        lat: region.latitude,
+        lon: region.longitude,
+        zoom: 12,
+        userLat: permissionDenied ? null : region.latitude,
+        userLon: permissionDenied ? null : region.longitude
+      }));
+
+      if (reports && reports.length > 0) {
+        webviewRef.current.postMessage(JSON.stringify({
+          type: 'UPDATE_DATA',
+          reports: reports
+        }));
+      }
+    }
+  }, [isMapLoaded, region, reports]);
+
+  const handleWebViewMessage = (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'LOADED') {
+        setIsMapLoaded(true);
+      }
+    } catch (e) {
+      console.error("Error parsing message from webview:", e);
+    }
+  };
+
   const openDrawer = () => {
     setDrawerVisible(true);
     Animated.parallel([
@@ -159,9 +192,13 @@ const MapScreen = ({ navigation }) => {
 
       setRegion(newRegion);
 
-      // Animate to new region
-      if (mapRef.current) {
-        mapRef.current.animateToRegion(newRegion, 1000);
+      if (webviewRef.current) {
+        webviewRef.current.postMessage(JSON.stringify({
+          type: 'RECENTER',
+          lat: current.coords.latitude,
+          lon: current.coords.longitude,
+          zoom: 14
+        }));
       }
     } catch (error) {
       console.log('Could not get current location');
@@ -185,65 +222,7 @@ const MapScreen = ({ navigation }) => {
     } catch { }
   };
 
-  // Reverse geocode via Nominatim — called when user taps a callout
-  const geocodeCache = useRef({});
-  const fetchAddress = async (lat, lon) => {
-    const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
-    if (geocodeCache.current[key]) return; // already fetched
-    setAddresses(prev => ({ ...prev, [key]: { street: '', area: '', loading: true } }));
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`,
-        { headers: { 'Accept-Language': 'en' } }
-      );
-      const data = await res.json();
-      const a = data.address || {};
-      const street = [a.road || a.pedestrian || a.footway || a.path || 'Unknown street', a.house_number || '']
-        .filter(Boolean).join(' ');
-      const area = [a.suburb || a.neighbourhood || a.village || a.town || '', a.city || a.municipality || '']
-        .filter(Boolean).join(', ');
-      const result = { street, area, loading: false };
-      geocodeCache.current[key] = result;
-      setAddresses(prev => ({ ...prev, [key]: result }));
-    } catch {
-      const result = { street: 'Address unavailable', area: '', loading: false };
-      geocodeCache.current[key] = result;
-      setAddresses(prev => ({ ...prev, [key]: result }));
-    }
-  };
-
-  // Get color and label based on report count
-  const getMarkerStyle = (count) => {
-    if (count >= 5) {
-      return {
-        color: '#B71C1C', // Dark Red - Critical
-        label: 'Critical',
-        radius: 150,
-        opacity: 0.4
-      };
-    } else if (count >= 3) {
-      return {
-        color: '#D32F2F', // Red - High
-        label: 'High',
-        radius: 120,
-        opacity: 0.35
-      };
-    } else if (count === 2) {
-      return {
-        color: '#FF9800', // Orange - Medium
-        label: 'Medium',
-        radius: 90,
-        opacity: 0.3
-      };
-    } else {
-      return {
-        color: '#FFC107', // Yellow - Low
-        label: 'Low',
-        radius: 60,
-        opacity: 0.25
-      };
-    }
-  };
+  // Helper helpers are now implemented inside the Leaflet WebView HTML template
 
   if (isLoading || !region) {
     return (
@@ -278,97 +257,24 @@ const MapScreen = ({ navigation }) => {
 
       {/* Map Container */}
       <View style={styles.mapContainer}>
-        <MapView
-          ref={mapRef}
+        <WebView
+          ref={webviewRef}
+          source={{ html: HTML_TEMPLATE }}
           style={styles.map}
-          initialRegion={region}
-          showsUserLocation={!permissionDenied}
-          showsMyLocationButton={false}
-          showsCompass={true}
-          showsScale={true}
-        >
-          {reports && reports.length > 0 && reports.map((item, index) => {
-            // Validate the data structure
-            if (!item.coordinates || !Array.isArray(item.coordinates) || item.coordinates.length !== 2) {
-              console.warn('Invalid report data:', item);
-              return null;
+          onMessage={handleWebViewMessage}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          originWhitelist={['*']}
+          onShouldStartLoadWithRequest={(request) => {
+            if (request.url.startsWith('https://www.google.com/maps')) {
+              Linking.openURL(request.url).catch(err => {
+                Alert.alert("Error", "Could not open Google Maps app.");
+              });
+              return false;
             }
-
-            // Backend returns: { _id, count, coordinates: [lon, lat] }
-            const [lon, lat] = item.coordinates;
-            const count = item.count || 1;
-
-            // Validate coordinates
-            if (typeof lat !== 'number' || typeof lon !== 'number' ||
-              isNaN(lat) || isNaN(lon) ||
-              lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-              console.warn('Invalid coordinates:', { lat, lon });
-              return null;
-            }
-
-            const markerStyle = getMarkerStyle(count);
-
-            return (
-              <React.Fragment key={`marker-${index}-${lon}-${lat}`}>
-                {/* Colored Circle to show intensity */}
-                <Circle
-                  center={{ latitude: lat, longitude: lon }}
-                  radius={markerStyle.radius}
-                  fillColor={markerStyle.color}
-                  strokeColor={markerStyle.color}
-                  strokeWidth={2}
-                  fillOpacity={markerStyle.opacity}
-                />
-
-                {/* Pin Marker */}
-                <Marker
-                  coordinate={{ latitude: lat, longitude: lon }}
-                  pinColor={markerStyle.color}
-                  onPress={() => fetchAddress(lat, lon)}
-                >
-                  <View style={styles.markerContainer}>
-                    <View style={[styles.markerCircle, { backgroundColor: markerStyle.color }]}>
-                      <Text style={styles.markerText}>{count}</Text>
-                    </View>
-                    <View style={[styles.markerTriangle, { borderTopColor: markerStyle.color }]} />
-                  </View>
-                  <Callout tooltip={false}>
-                    {(() => {
-                      const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
-                      const addr = addresses[key];
-                      return (
-                        <View style={styles.calloutContainer}>
-                          {/* Address row */}
-                          <View style={styles.calloutAddressRow}>
-                            <Text style={styles.calloutAddressIcon}>📍</Text>
-                            <View style={{ flex: 1 }}>
-                              {!addr ? (
-                                <Text style={styles.calloutAddressLoading}>Tap to load address...</Text>
-                              ) : addr.loading ? (
-                                <Text style={styles.calloutAddressLoading}>Fetching address...</Text>
-                              ) : (
-                                <>
-                                  <Text style={styles.calloutStreet}>{addr.street}</Text>
-                                  {!!addr.area && <Text style={styles.calloutArea}>{addr.area}</Text>}
-                                </>
-                              )}
-                            </View>
-                          </View>
-                          <View style={styles.calloutDivider} />
-                          <Text style={styles.calloutTitle}>{markerStyle.label} Noise Level</Text>
-                          <Text style={styles.calloutText}>{count} Report{count > 1 ? 's' : ''}</Text>
-                          <Text style={styles.calloutDescription}>
-                            This location has received {count} noise complaint{count > 1 ? 's' : ''}
-                          </Text>
-                        </View>
-                      );
-                    })()}
-                  </Callout>
-                </Marker>
-              </React.Fragment>
-            );
-          })}
-        </MapView>
+            return true;
+          }}
+        />
 
         {/* Legend */}
         <View style={styles.legendContainer}>
@@ -612,4 +518,318 @@ const styles = StyleSheet.create({
   },
 });
 
-export default MapScreen
+const HTML_TEMPLATE = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    body { padding: 0; margin: 0; }
+    html, body, #map { height: 100%; width: 100vw; }
+    .leaflet-popup-content-wrapper {
+      border-radius: 12px;
+      padding: 0;
+    }
+    .leaflet-popup-content {
+      margin: 12px;
+    }
+    .marker-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .marker-circle {
+      width: 32px;
+      height: 32px;
+      border-radius: 16px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border: 2px solid white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .marker-text {
+      color: white;
+      font-size: 14px;
+      font-weight: bold;
+      font-family: sans-serif;
+    }
+    .marker-triangle {
+      width: 0;
+      height: 0;
+      background-color: transparent;
+      border-style: solid;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-top: 10px solid;
+      margin-top: -1px;
+    }
+    .callout-container {
+      padding: 5px;
+      min-width: 180px;
+      font-family: sans-serif;
+    }
+    .callout-title {
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 5px;
+      color: #333;
+    }
+    .callout-text {
+      font-size: 12px;
+      margin-bottom: 3px;
+      color: #555;
+    }
+    .callout-description {
+      font-size: 11px;
+      color: #666;
+    }
+    .callout-address-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .callout-address-icon {
+      font-size: 14px;
+    }
+    .callout-street {
+      font-size: 12px;
+      font-weight: 800;
+      color: #3E2C23;
+      line-height: 15px;
+    }
+    .callout-area {
+      font-size: 10px;
+      color: #8B7355;
+      margin-top: 2px;
+    }
+    .callout-divider {
+      height: 1px;
+      background-color: #E8DDD0;
+      margin-bottom: 8px;
+    }
+    .gmaps-btn {
+      display: block;
+      margin-top: 10px;
+      text-align: center;
+      background-color: #315342;
+      color: white;
+      text-decoration: none;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: bold;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .gmaps-btn:active {
+      background-color: #213A2E;
+    }
+    #layer-toggle-btn {
+      position: absolute;
+      bottom: 24px;
+      right: 16px;
+      z-index: 1000;
+      background-color: #D4AC0D;
+      border: none;
+      border-radius: 20px;
+      padding: 10px 16px;
+      color: #8B4513;
+      font-size: 13px;
+      font-weight: bold;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      font-family: sans-serif;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #layer-toggle-btn:active {
+      background-color: #B3920B;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <button id="layer-toggle-btn" onclick="toggleMapLayer()">🛰️ Satellite</button>
+  <script>
+    let map = null;
+    let markersLayer = null;
+    let userLocationMarker = null;
+    const geocodeCache = {};
+
+    let currentLayer = 'street';
+    const streetTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19
+    });
+    const satelliteTiles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; Esri'
+    });
+
+    function initMap(lat, lon, zoom) {
+      if (map) return;
+      map = L.map('map', {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([lat, lon], zoom);
+
+      streetTiles.addTo(map);
+      markersLayer = L.layerGroup().addTo(map);
+    }
+
+    function toggleMapLayer() {
+      if (!map) return;
+      if (currentLayer === 'street') {
+        map.removeLayer(streetTiles);
+        satelliteTiles.addTo(map);
+        currentLayer = 'satellite';
+        document.getElementById('layer-toggle-btn').innerHTML = '🗺️ Street View';
+      } else {
+        map.removeLayer(satelliteTiles);
+        streetTiles.addTo(map);
+        currentLayer = 'street';
+        document.getElementById('layer-toggle-btn').innerHTML = '🛰️ Satellite';
+      }
+    }
+
+    function updateUserLocationMarker(lat, lon) {
+      if (!map) return;
+      if (userLocationMarker) {
+        userLocationMarker.setLatLng([lat, lon]);
+      } else {
+        const blueDotIcon = L.divIcon({
+          className: '',
+          html: '<div style="width: 14px; height: 14px; border-radius: 7px; background-color: #2196F3; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>',
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
+        userLocationMarker = L.marker([lat, lon], { icon: blueDotIcon }).addTo(map);
+      }
+    }
+
+    function getMarkerStyle(count) {
+      if (count >= 5) {
+        return { color: '#B71C1C', label: 'Critical', radius: 150, opacity: 0.4 };
+      } else if (count >= 3) {
+        return { color: '#D32F2F', label: 'High', radius: 120, opacity: 0.35 };
+      } else if (count === 2) {
+        return { color: '#FF9800', label: 'Medium', radius: 90, opacity: 0.3 };
+      } else {
+        return { color: '#FFC107', label: 'Low', radius: 60, opacity: 0.25 };
+      }
+    }
+
+    async function reverseGeocode(lat, lon) {
+      const key = lat.toFixed(5) + ',' + lon.toFixed(5);
+      if (geocodeCache[key]) return geocodeCache[key];
+      try {
+        const res = await fetch(
+          'https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lon + '&format=json&addressdetails=1',
+          { headers: { 'Accept-Language': 'en', 'User-Agent': 'NOISEWATCH-Mobile/1.0' } }
+        );
+        const data = await res.json();
+        const a = data.address || {};
+        const street = [a.road || a.pedestrian || a.footway || a.path || 'Unknown street', a.house_number || '']
+          .filter(Boolean).join(' ');
+        const area = [a.suburb || a.neighbourhood || a.village || a.town || '', a.city || a.municipality || '']
+          .filter(Boolean).join(', ');
+        const result = { street, area };
+        geocodeCache[key] = result;
+        return result;
+      } catch (e) {
+        return { street: 'Address unavailable', area: '' };
+      }
+    }
+
+    function updateMarkers(reports) {
+      if (!map || !markersLayer) return;
+      markersLayer.clearLayers();
+
+      reports.forEach(item => {
+        if (!item.coordinates || item.coordinates.length !== 2) return;
+        const [lon, lat] = item.coordinates;
+        const count = item.count || 1;
+        const style = getMarkerStyle(count);
+
+        // Heatmap circle
+        L.circle([lat, lon], {
+          radius: style.radius,
+          color: style.color,
+          fillColor: style.color,
+          fillOpacity: style.opacity,
+          weight: 2
+        }).addTo(markersLayer);
+
+        // DivIcon pin
+        const pinIcon = L.divIcon({
+          className: '',
+          html: '<div class="marker-container">' +
+                  '<div class="marker-circle" style="background:' + style.color + '">' +
+                    '<span class="marker-text">' + count + '</span>' +
+                  '</div>' +
+                  '<div class="marker-triangle" style="border-top-color:' + style.color + '"></div>' +
+                '</div>',
+          iconSize: [32, 42],
+          iconAnchor: [16, 42],
+          popupAnchor: [0, -44]
+        });
+
+        const buildPopupHtml = (street, area) => 
+          '<div class="callout-container">' +
+            '<div class="callout-address-row">' +
+              '<span class="callout-address-icon">📍</span>' +
+              '<div style="flex: 1;">' +
+                '<div class="callout-street">' + street + '</div>' +
+                (area ? '<div class="callout-area">' + area + '</div>' : '') +
+              '</div>' +
+            '</div>' +
+            '<div class="callout-divider"></div>' +
+            '<div class="callout-title">' + style.label + ' Noise Level</div>' +
+            '<div class="callout-text">' + count + ' Report' + (count > 1 ? 's' : '') + '</div>' +
+            '<div class="callout-description">This location has received ' + count + ' noise complaint' + (count > 1 ? 's' : '') + '</div>' +
+            '<a href="https://www.google.com/maps?q=' + lat + ',' + lon + '" target="_blank" class="gmaps-btn">🗺️ Open in Google Maps</a>' +
+          '</div>';
+
+        const marker = L.marker([lat, lon], { icon: pinIcon })
+          .bindPopup(buildPopupHtml('<span style="font-style:italic;color:#999;">Tap to load address...</span>', ''), { maxWidth: 220 })
+          .addTo(markersLayer);
+
+        marker.on('popupopen', async () => {
+          const { street, area } = await reverseGeocode(lat, lon);
+          marker.setPopupContent(buildPopupHtml(street, area));
+        });
+      });
+    }
+
+    function handleMessage(data) {
+      if (data.type === 'INIT_MAP') {
+        initMap(data.lat, data.lon, data.zoom);
+        if (data.userLat && data.userLon) {
+          updateUserLocationMarker(data.userLat, data.userLon);
+        }
+      } else if (data.type === 'UPDATE_DATA') {
+        updateMarkers(data.reports);
+      } else if (data.type === 'RECENTER') {
+        if (map) {
+          map.setView([data.lat, data.lon], data.zoom || 14, { animate: true });
+          updateUserLocationMarker(data.lat, data.lon);
+        }
+      }
+    }
+
+    document.addEventListener('message', function(event) {
+      handleMessage(JSON.parse(event.data));
+    });
+    window.addEventListener('message', function(event) {
+      handleMessage(JSON.parse(event.data));
+    });
+
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'LOADED' }));
+  </script>
+</body>
+</html>
+`;
+
+export default MapScreen;
